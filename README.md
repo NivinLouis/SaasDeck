@@ -1,114 +1,206 @@
-#SaasDeck
-> **Odoo Hackathon Project**
-> A database-backed subscription management platform foundation. The backend is deliberately modular so the team can add catalog, subscriptions, billing, payments, reports, and portal features without reworking authentication or the data-access boundary.
+# SaasDeck
 
-[![Odoo](https://img.shields.io/badge/Odoo-v17.0%20%2F%20v18.0-purple?logo=odoo)](https://www.odoo.com)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://www.python.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791?logo=postgresql)](https://www.postgresql.org/)
-[![Status](https://img.shields.io/badge/Status-In%20Development-orange)]()
+> Subscription management and recurring billing platform for the Odoo Hackathon.
 
----
+SaasDeck is a Django and React application for managing customers, products,
+subscription plans, quotations, invoices, payments, and recurring billing. It
+uses PostgreSQL for persistence, Redis and Celery for background work, and
+Docker Compose for local development.
 
-## 📖 Overview
+## Current status
 
-**SaasDeck** is a centralized control panel and orchestration layer designed to simplify the provisioning, lifecycle management, and monitoring of multi-tenant Odoo instances. Built for the Odoo Hackathon, it bridges developer operations with an intuitive user experience to deploy and manage SaaS environments seamlessly.
+The project is actively being developed. The following are available in the
+current `main` branch:
 
----
+- JWT authentication with `admin`, `staff`, and `customer` roles, strong
+  password validation, customer sign-up, token refresh/logout, and password
+  change.
+- Customer directory and customer self-service billing profile.
+- Product, tax, product-attribute/variant, plan, and payment-term management.
+- Quotation templates, draft subscriptions, quotation creation from a
+  template, and the initial send-quotation, confirm, activate, pause, resume,
+  and cancel lifecycle actions.
+- Draft/confirmed/cancelled invoices, GST tax-invoice HTML, generated PDF
+  downloads, and invoice email delivery.
+- Partial and full payment recording with invoice balance updates and payment
+  refunds.
+- Daily, idempotent recurring billing runs through Celery, including billing
+  run history and captured per-subscription failures.
+- A staff dashboard summary and a private in-app notification inbox.
+- React screens for authentication, customers, catalog/products, plans,
+  subscriptions, invoices, payments, administration, and the dashboard.
 
-## What is implemented
+Still in progress: detailed reports and CSV exports, subscription-line and
+quotation-template-line APIs, discount redemption/application during billing,
+dedicated customer portal subscription/invoice routes, additional account
+administration, and broader frontend coverage for operations features.
 
-- Django 5 + Django REST Framework project with PostgreSQL, Redis/Celery configuration, Docker Compose, health endpoint, and environment-based settings.
-- Custom email-first user model with `admin`, `staff`, and `customer` roles; case-insensitive email uniqueness and Argon2 dependency.
-- JWT register/login/refresh/logout, current-user endpoint, password-change endpoint, and admin-only staff creation.
-- Strong server-side password validation: at least 9 characters, including uppercase, lowercase, and a special character.
-- Customer billing profiles, staff/admin CRUD endpoints, and a customer-only profile endpoint. Permissions are enforced in the API, not merely hidden by the UI.
-- Consistent JSON validation/error envelope, pagination, filtering, searching, ordering, Django admin, initial migrations, and regression tests for authentication and ownership boundaries.
+## Stack
 
-## Deliberately left for feature branches
-
-The foundation does **not** yet implement catalog, plans, subscriptions, invoices, payments, discounts, reporting, email, PDF generation, or scheduled billing. Add these as focused apps and call business operations from `services.py`; keep views thin and retain database constraints for financial invariants.
-
-
----
-
-## 🛠️ Tech Stack
-
-- **Backend / Core**: [Odoo](https://www.odoo.com) (Python 3.10+)
-- **Database**: PostgreSQL
-- **Containerization / Deployment**: Docker / Docker Compose
-
----
+- Backend: Python 3.12, Django 5, Django REST Framework
+- Frontend: React 19, TypeScript, Vite, TanStack Query
+- Data and background work: PostgreSQL 16, Redis 7, Celery, Celery Beat
+- Documents: ReportLab and Django templates for invoice PDFs and GST HTML
+- Local orchestration: Docker Compose
 
 ## Run locally
 
 ### Prerequisites
 
-Ensure you have the following installed locally:
-- **Python** 3.10 or higher
-- **PostgreSQL** 14 or higher
-- **Docker & Docker Compose** (optional for containerized setup)
+- Docker Engine and Docker Compose
+- Git
 
-### Local Setup
+### Start the application
 
-1. Copy `.env.example` to `.env` and replace the sample secrets.
-2. From the repository root, start the dependencies and API:
+1. Create your local environment file.
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   The example configuration is for local development only. Replace its
+   database password, Django secret key, and email configuration before any
+   shared or production deployment.
+
+2. Build and start every service.
 
    ```bash
    docker compose up --build
    ```
 
-   Migrations run automatically. The API is available at `http://localhost:8000`, with `GET /health/` for a quick check.
+   Docker starts PostgreSQL, Redis, the Django API, a Celery worker, Celery
+   Beat, and the Vite frontend. Database migrations run automatically when the
+   backend starts.
 
-3. To create an administrator:
+3. Open the application.
+
+   - Frontend: http://localhost:5173
+   - API health check: http://localhost:8000/health/
+   - Django admin: http://localhost:8000/admin/
+
+4. Stop the stack when finished.
 
    ```bash
-   docker compose exec backend python manage.py createsuperuser
+   docker compose down
    ```
 
-4. Run the tests:
+   Add `--volumes` only when you intentionally want to remove local database
+   data.
 
-   ```bash
-   docker compose exec backend python manage.py test
-   ```
+### Useful commands
 
-## Foundation API
+Create an administrator:
 
-All API paths start with `/api/v1` and accept JSON.
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
 
-| Method | Path | Purpose |
+Run the backend tests:
+
+```bash
+docker compose exec backend python manage.py test
+```
+
+Run a one-off recurring billing run as an authenticated admin through the API,
+or inspect the worker/Beat logs:
+
+```bash
+docker compose logs -f celery-worker celery-beat
+```
+
+## Demo data
+
+Populate the database with demonstration users, catalog data, plans,
+quotation templates, and subscriptions:
+
+```bash
+docker compose run --rm backend python manage.py seed_demo_data
+```
+
+Reset only seeded demonstration records before seeding again:
+
+```bash
+docker compose run --rm backend python manage.py seed_demo_data --clear
+```
+
+Default development credentials:
+
+| Role | Email | Password |
 | --- | --- | --- |
-| POST | `/auth/register` | Customer sign-up |
-| POST | `/auth/login` | Return JWT access and refresh tokens |
-| POST | `/auth/refresh` | Rotate a refresh token |
-| POST | `/auth/logout` | Blacklist a refresh token |
-| POST | `/auth/password/change` | Change the authenticated user's password |
-| GET | `/me` | Authenticated user's profile and role |
-| POST | `/users/staff` | Admin creates staff/admin user |
-| GET | `/users` | Admin user list |
-| GET, POST | `/customers` | Staff/admin list and create customers |
-| GET, PATCH | `/customers/{id}` | Staff/admin customer record |
-| GET, PATCH | `/portal/profile` | Customer's own billing profile |
+| Admin | `admin@brightloop.io` | `Admin@Brightloop123!` |
+| Staff | `staff@brightloop.io` | `Staff@Brightloop123!` |
+| Customer | `acme.corp@example.com` | `Customer@Brightloop123!` |
+| Customer | `globex@example.com` | `Customer@Brightloop123!` |
+| Customer | `initech@example.com` | `Customer@Brightloop123!` |
 
-Use `Authorization: Bearer <access-token>` for protected routes. List endpoints support `page`, `page_size`, `search`, and approved ordering/filter fields.
+These credentials are intentionally for local demo data only.
 
----
+## API
 
-## Repository structure
+All business API routes begin with `/api/v1`. Protected routes use a JWT bearer
+token:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+Requests and validation errors use JSON. List endpoints support pagination via
+`page` and `page_size`; many also support documented filters, search, and
+ordering fields.
+
+| Area | Available routes |
+| --- | --- |
+| Health | `GET /health/` |
+| Auth | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/password/change`; `GET /me` |
+| Users | `GET /users`; `POST /users/staff` |
+| Customers | `GET, POST /customers`; `GET, PATCH /customers/{id}`; `GET, PATCH /portal/profile` |
+| Catalog | `GET, POST /products`, `/taxes`, `/attributes`, `/variants`; `GET, PATCH` detail routes for each resource |
+| Plans | `GET, POST /plans`, `/payment-terms`; `GET, PATCH` detail routes |
+| Quotations and subscriptions | `GET, POST /quotation-templates`; `GET, PATCH /quotation-templates/{uuid}`; `POST /quotation-templates/{uuid}/quotations`; `GET, POST /subscriptions`; subscription detail and lifecycle action routes |
+| Discounts | `GET, POST /discounts`; `GET, PATCH /discounts/{uuid}` |
+| Invoices and billing | Invoice list/detail/create, confirm, cancel, send, PDF, GST tax-invoice HTML; `POST /billing/run`; billing run list/detail |
+| Payments | `GET, POST /payments`; payment detail; `POST /payments/{uuid}/refund` |
+| Reports | `GET /reports/dashboard` |
+| Notifications | `GET /notifications`; `POST /notifications/{uuid}/read` |
+
+Route definitions are the source of truth in `backend/apps/*/urls.py`.
+
+## Recurring billing and email
+
+Celery Beat schedules the daily billing task. Its run time is controlled in
+`.env`:
+
+```dotenv
+BILLING_RUN_HOUR=1
+BILLING_RUN_MINUTE=0
+```
+
+The task creates invoices only for due active subscriptions, preserves the
+per-period uniqueness guarantee, advances a subscription only after a
+successful invoice, and saves an auditable billing-run record.
+
+Invoice email is asynchronous by default in the example configuration. The
+default email backend writes messages to backend logs. Set an SMTP email backend
+and its credentials in `.env` before sending real email.
+
+## Repository layout
 
 ```text
 SaasDeck/
 ├── backend/
-│   ├── config/           # Settings, URL composition, Celery bootstrap
-│   └── apps/
-│       ├── accounts/     # Custom user, JWT-facing auth, password policy
-│       ├── customers/    # Customer profile and ownership boundary
-│       └── core/         # Shared permissions and API error handling
-├── docker-compose.yml
-└── .env.example
+│   ├── apps/             # Feature-oriented Django apps
+│   └── config/           # Settings, URLs, Celery bootstrap
+├── frontend/             # React + TypeScript application
+├── docs/                 # Schema, GST invoice, testing, and handoff notes
+├── docker-compose.yml    # Local service orchestration
+└── .env.example          # Development configuration template
 ```
 
-The repository also contains pre-registered feature modules for `catalog`, `plans`,
-`subscriptions`, `discounts`, `billing`, `payments`, `reports`, and `notifications`.
-Each has dedicated models, serializers, views, services, tasks, migrations, and tests
-locations so the team can build independently without collapsing business logic into
-one app. See [`docs/backend-app-ownership.md`](docs/backend-app-ownership.md).
+Useful project documents:
+
+- [Backend app ownership](docs/backend-app-ownership.md)
+- [Database teammate guide](docs/database-teammate-guide.md)
+- [Database schema](docs/database_schema.md)
+- [GST invoice notes](docs/gst-invoice.md)
+- [Invoice PDF handoff](docs/invoice-pdf-handoff.md)
+- [Billing test report](docs/billing-test-report.md)
