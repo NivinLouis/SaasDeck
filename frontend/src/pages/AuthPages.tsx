@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
@@ -17,7 +17,7 @@ const registerSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 type RegisterValues = z.infer<typeof registerSchema>;
 
-function AuthFrame({ children, title, description }: { children: React.ReactNode; title: string; description: string }) {
+function AuthFrame({ children, title, description }: { children: ReactNode; title: string; description: string }) {
   return <main className="auth-page"><section className="auth-panel"><Brand /><div className="auth-copy"><p className="eyebrow">Subscription operations, simplified</p><h1>{title}</h1><p>{description}</p></div>{children}</section><aside className="auth-aside"><div><p className="eyebrow">Brightloop Software</p><h2>One clear view of every subscription.</h2><p>Manage customers, recurring revenue, invoices, and payments from a single focused workspace.</p></div><small>Built for the people who keep subscriptions moving.</small></aside></main>;
 }
 
@@ -27,6 +27,7 @@ export function LoginPage() {
   const location = useLocation();
   const [serverError, setServerError] = useState<string>();
   const { register, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
+  const registered = (location.state as { registered?: boolean } | null)?.registered;
 
   if (isAuthenticated) return <Navigate to="/" replace />;
 
@@ -46,7 +47,7 @@ export function LoginPage() {
     }
   }
 
-  return <AuthFrame title="Welcome back" description="Sign in to continue to your workspace."><form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Password" type="password" autoComplete="current-password" error={errors.password?.message} {...register("password")} />{serverError ? <p className="form-alert" role="alert">{serverError}</p> : null}<Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Signing in…" : "Sign in"}</Button></form><p className="auth-switch">New to Brightloop? <Link to="/register">Create an account</Link></p></AuthFrame>;
+  return <AuthFrame title="Welcome back" description="Sign in to continue to your workspace.">{registered ? <p className="form-alert form-alert--success" role="status">Your account is ready. Sign in to continue.</p> : null}<form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Password" type="password" autoComplete="current-password" error={errors.password?.message} {...register("password")} />{serverError ? <p className="form-alert" role="alert">{serverError}</p> : null}<Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Signing in…" : "Sign in"}</Button></form><p className="auth-switch">New to Brightloop? <Link to="/register">Create an account</Link></p></AuthFrame>;
 }
 
 export function RegisterPage() {

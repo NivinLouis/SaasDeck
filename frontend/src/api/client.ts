@@ -40,8 +40,18 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   return data as T;
 }
 
+async function download(path: string, token: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { Accept: "application/pdf", Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null) as Partial<ValidationErrorResponse> & { detail?: string } | null;
+    throw new ApiError(data?.message ?? data?.detail ?? "The file could not be downloaded.", response.status, data?.fields);
+  }
+  return response.blob();
+}
+
 export const api = {
   get: <T>(path: string, token?: string) => request<T>(path, { method: "GET", token }),
   post: <T>(path: string, body?: unknown, token?: string) => request<T>(path, { method: "POST", body, token }),
   patch: <T>(path: string, body: unknown, token: string) => request<T>(path, { method: "PATCH", body, token }),
+  download: (path: string, token: string) => download(path, token),
 };
