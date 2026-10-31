@@ -51,13 +51,13 @@ Ensure you have the following installed locally:
 ### Local Setup
 
 1. Copy `.env.example` to `.env` and replace the sample secrets.
-2. From the repository root, start the dependencies and API:
+2. From the repository root, start the dependencies, API, and frontend:
 
    ```bash
    docker compose up --build
    ```
 
-   Migrations run automatically. The API is available at `http://localhost:8000`, with `GET /health/` for a quick check.
+   Migrations run automatically. The API is available at `http://localhost:8000`, with `GET /health/` for a quick check. The Vite frontend is available at `http://localhost:5173`.
 
 3. To create an administrator:
 
@@ -97,6 +97,7 @@ Use `Authorization: Bearer <access-token>` for protected routes. List endpoints 
 
 ```text
 SaasDeck/
+├── frontend/              # Vite + React + TypeScript client
 ├── backend/
 │   ├── config/           # Settings, URL composition, Celery bootstrap
 │   └── apps/
