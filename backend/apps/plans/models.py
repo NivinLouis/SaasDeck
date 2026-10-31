@@ -47,6 +47,14 @@ class Plan(models.Model):
     name = models.CharField(max_length=255, unique=True, db_index=True)
     code = models.SlugField(max_length=100, unique=True, db_index=True, help_text=_("Unique identifier, e.g. pro-monthly"))
     description = models.TextField(blank=True, null=True)
+    product = models.ForeignKey(
+        "catalog.Product",
+        on_delete=models.PROTECT,
+        related_name="plans",
+        null=True,
+        blank=True,
+        help_text=_("Product or service sold through this recurring plan."),
+    )
 
     billing_interval = models.CharField(
         max_length=20,
@@ -64,6 +72,11 @@ class Plan(models.Model):
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text=_("Base recurring subscription fee per interval.")
+    )
+    currency = models.CharField(
+        max_length=3,
+        default="INR",
+        help_text=_("ISO 4217 currency code, e.g. INR or USD."),
     )
     minimum_quantity = models.PositiveIntegerField(
         default=1,
