@@ -23,6 +23,8 @@
 - Strong server-side password validation: at least 9 characters, including uppercase, lowercase, and a special character.
 - Customer billing profiles, staff/admin CRUD endpoints, and a customer-only profile endpoint. Permissions are enforced in the API, not merely hidden by the UI.
 - Consistent JSON validation/error envelope, pagination, filtering, searching, ordering, Django admin, initial migrations, and regression tests for authentication and ownership boundaries.
+- Auditable recurring billing runs: a daily Celery job finds due active subscriptions, generates idempotent invoices, advances successful billing periods, and records per-subscription failures for review.
+- Admin billing-run APIs, confirmed-invoice email delivery with a PDF attachment, plus Docker Compose worker and scheduler services.
 
 ## Deliberately left for feature branches
 
@@ -112,6 +114,10 @@ All API paths start with `/api/v1` and accept JSON.
 | GET, POST | `/customers` | Staff/admin list and create customers |
 | GET, PATCH | `/customers/{id}` | Staff/admin customer record |
 | GET, PATCH | `/portal/profile` | Customer's own billing profile |
+| POST | `/billing/run` | Admin triggers a recurring billing run, optionally for a past business date |
+| GET | `/billing/runs` | Admin billing-run history, filters, and pagination |
+| GET | `/billing/runs/{id}` | Admin billing-run details and per-subscription failures |
+| POST | `/invoices/{id}/send` | Staff emails a confirmed or paid invoice PDF |
 
 Use `Authorization: Bearer <access-token>` for protected routes. List endpoints support `page`, `page_size`, `search`, and approved ordering/filter fields.
 

@@ -4,7 +4,7 @@ from apps.catalog.models import Product, Tax
 from apps.customers.models import Customer
 from apps.subscriptions.models import Subscription
 
-from .models import Invoice, InvoiceLine
+from .models import BillingRun, Invoice, InvoiceLine
 from .services import create_invoice
 
 
@@ -28,7 +28,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "uuid", "invoice_number", "status", "payment_status", "issue_date", "due_date",
             "billing_period_start", "billing_period_end", "currency", "payment_terms", "notes",
             "customer_snapshot", "subtotal_amount", "discount_amount", "tax_amount", "total_amount",
-            "amount_paid", "amount_due", "is_overdue", "pdf_document", "lines", "created_at", "updated_at",
+            "amount_paid", "amount_due", "is_overdue", "pdf_document", "email_sent_at", "lines", "created_at", "updated_at",
         )
         read_only_fields = fields
 
@@ -66,3 +66,27 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         return create_invoice(**validated_data)
+
+
+class BillingRunRequestSerializer(serializers.Serializer):
+    run_date = serializers.DateField(required=False)
+
+    def validate_run_date(self, value):
+        from django.utils import timezone
+
+        if value > timezone.localdate():
+            raise serializers.ValidationError("A billing run cannot be scheduled for a future date.")
+        return value
+
+
+class BillingRunSerializer(serializers.ModelSerializer):
+    triggered_by_email = serializers.EmailField(source="triggered_by.email", read_only=True, allow_null=True)
+
+    class Meta:
+        model = BillingRun
+        fields = (
+            "uuid", "run_date", "status", "triggered_by_email", "finished_at",
+            "subscriptions_considered", "invoices_created", "invoices_existing", "failures",
+            "created_at", "updated_at",
+        )
+        read_only_fields = fields

@@ -8,12 +8,19 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsStaffOrAdmin
+from apps.core.permissions import IsAdmin
 
-from .models import Invoice
-from .serializers import InvoiceCreateSerializer, InvoiceSerializer
-from .services import InvoiceDocumentValidationError, cancel_invoice, confirm_invoice, generate_due_invoices, render_tax_invoice_html
-from .tasks import generate_invoice_pdf_task
+from .models import BillingRun, Invoice
+from .serializers import BillingRunRequestSerializer, BillingRunSerializer, InvoiceCreateSerializer, InvoiceSerializer
+from .services import (
+    InvoiceDocumentValidationError,
+    cancel_invoice,
+    confirm_invoice,
+    render_tax_invoice_html,
+    run_recurring_billing,
+    send_invoice_email,
+)
+from .tasks import generate_invoice_pdf_task, send_invoice_email_task
 
 
 def invoice_queryset_for(user):
@@ -97,6 +104,23 @@ class InvoicePdfView(InvoiceActionView):
         return FileResponse(invoice.pdf_document.open("rb"), content_type="application/pdf", filename=f"{invoice.invoice_number}.pdf")
 
 
+class InvoiceSendView(InvoiceActionView):
+    """Send a confirmed invoice to its customer's billing address."""
+
+    def post(self, request, uuid):
+        invoice = self.get_invoice(request, uuid)
+        if not request.user.is_internal_staff:
+            return Response({"code": "permission_denied", "message": "Only staff can send invoices."}, status=status.HTTP_403_FORBIDDEN)
+        if invoice.status not in {Invoice.Status.CONFIRMED, Invoice.Status.PAID}:
+            raise ValidationError("Only confirmed or paid invoices can be sent.")
+        if not invoice.customer.email:
+            raise ValidationError({"invoice": "The invoice customer does not have an email address."})
+        if settings.INVOICE_EMAIL_ASYNC:
+            send_invoice_email_task.delay(invoice.id)
+            return Response({"message": "Invoice email has been queued."}, status=status.HTTP_202_ACCEPTED)
+        return Response(InvoiceSerializer(send_invoice_email(invoice.id)).data)
+
+
 class TaxInvoiceHTMLView(InvoiceActionView):
     """Render a final GST tax invoice as print-ready HTML for a PDF worker."""
 
@@ -111,10 +135,30 @@ class TaxInvoiceHTMLView(InvoiceActionView):
         return response
 
 
-class BillingRunView(APIView):
-    """Allow staff to start an on-demand billing sweep when required."""
-
-    permission_classes = [IsStaffOrAdmin]
+class BillingRunTriggerView(APIView):
+    permission_classes = [IsAdmin]
 
     def post(self, request):
-        return Response(generate_due_invoices())
+        serializer = BillingRunRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        billing_run = run_recurring_billing(
+            run_date=serializer.validated_data.get("run_date"),
+            triggered_by=request.user,
+        )
+        return Response(BillingRunSerializer(billing_run).data, status=status.HTTP_201_CREATED)
+
+
+class BillingRunListView(generics.ListAPIView):
+    serializer_class = BillingRunSerializer
+    permission_classes = [IsAdmin]
+    filterset_fields = ("status", "run_date")
+    ordering_fields = ("run_date", "created_at", "finished_at", "status")
+    ordering = ("-created_at",)
+    queryset = BillingRun.objects.select_related("triggered_by")
+
+
+class BillingRunDetailView(generics.RetrieveAPIView):
+    serializer_class = BillingRunSerializer
+    permission_classes = [IsAdmin]
+    lookup_field = "uuid"
+    queryset = BillingRun.objects.select_related("triggered_by")
