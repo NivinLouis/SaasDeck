@@ -175,3 +175,42 @@ export interface Payment {
   created_at: string;
   updated_at: string;
 }
+
+export interface Tax {
+  id: number;
+  name: string;
+  rate: string;
+  is_inclusive: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
+export type DiscountScope = "SUBSCRIPTION" | "PRODUCTS" | "PLANS";
+
+export interface DiscountRule {
+  uuid: string;
+  code: string;
+  name: string;
+  description: string | null;
+  discount_type: DiscountType;
+  value: string;
+  scope: DiscountScope;
+  minimum_purchase_amount: string;
+  minimum_quantity: number;
+  valid_from: string;
+  valid_until: string | null;
+  max_uses: number | null;
+  times_used: number;
+  is_active: boolean;
+  applicable_products: number[];
+  applicable_plans: number[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardSummary {
+  subscriptions: { total: number; by_status: Partial<Record<SubscriptionStatus, number>> };
+  invoices: { total: number; paid_total: string; outstanding_total: string; overdue_count: number };
+}

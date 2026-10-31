@@ -3,14 +3,18 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "rea
 import { AuthProvider } from "../auth/AuthContext";
 import { useAuth } from "../auth/useAuth";
 import { AppShell } from "../layouts/AppShell";
+import { SecurityPage, TeamCreatePage, TeamPage } from "../pages/AdminPages";
+import { DiscountFormPage, DiscountsPage, TaxFormPage, TaxesPage } from "../pages/AdminCatalogPages";
 import { LoginPage, RegisterPage } from "../pages/AuthPages";
 import { InvoiceDetailPage, InvoicesPage } from "../pages/InvoicePages";
+import { InvoiceCreatePage } from "../pages/InvoiceCreatePage";
 import { ModuleFormPage, ModuleListPage, modules } from "../pages/ModulePages";
 import { PaymentDetailPage, PaymentFormPage, PaymentsPage } from "../pages/PaymentPages";
 import { PlanFormPage, PlansPage, ProductFormPage, ProductsPage } from "../pages/CatalogPages";
 import { SubscriptionDetailPage, SubscriptionFormPage, SubscriptionsPage } from "../pages/SubscriptionPages";
-import { CustomerCreatePage, CustomersPage, ProfilePage, WorkspaceHome } from "../pages/WorkspacePages";
+import { CustomerCreatePage, CustomerEditPage, CustomersPage, ProfilePage } from "../pages/WorkspacePages";
 import { LandingPage } from "../pages/LandingPage";
+import { DashboardPage } from "../pages/DashboardPage";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
@@ -37,7 +41,7 @@ function AdminOnlyRoute() {
 
 function RoleHome() {
   const { user } = useAuth();
-  return user?.role === "customer" ? <Navigate to="/portal/profile" replace /> : <WorkspaceHome />;
+  return user?.role === "customer" ? <Navigate to="/portal/profile" replace /> : <DashboardPage />;
 }
 
 export function App() {
@@ -52,12 +56,12 @@ export function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route path="app" element={<RoleHome />} />
-                <Route path="settings/security" element={<ModuleFormPage module={modules.security} />} />
+                <Route path="settings/security" element={<SecurityPage />} />
 
                 <Route element={<InternalOnlyRoute />}>
                   <Route path="customers" element={<CustomersPage />} />
                   <Route path="customers/new" element={<CustomerCreatePage />} />
-                  <Route path="customers/:customerId" element={<ModuleFormPage module={modules.customerEdit} mode="edit" />} />
+                  <Route path="customers/:customerId" element={<CustomerEditPage />} />
                   <Route path="quotation-templates" element={<ModuleListPage module={modules.quotationTemplates} />} />
                   <Route path="quotation-templates/new" element={<ModuleFormPage module={modules.quotationTemplates} />} />
                   <Route path="quotation-templates/:templateId" element={<ModuleFormPage module={modules.quotationTemplates} mode="edit" />} />
@@ -76,28 +80,29 @@ export function App() {
                 </Route>
 
                 <Route element={<AdminOnlyRoute />}>
-                  <Route path="team" element={<ModuleListPage module={modules.team} />} />
-                  <Route path="team/new" element={<ModuleFormPage module={modules.team} />} />
-                  <Route path="team/:userId" element={<ModuleFormPage module={modules.team} mode="edit" />} />
-                  <Route path="taxes" element={<ModuleListPage module={modules.taxes} />} />
-                  <Route path="taxes/new" element={<ModuleFormPage module={modules.taxes} />} />
-                  <Route path="taxes/:taxId" element={<ModuleFormPage module={modules.taxes} mode="edit" />} />
+                  <Route path="team" element={<TeamPage />} />
+                  <Route path="team/new" element={<TeamCreatePage />} />
+                  <Route path="team/:userId" element={<Navigate to="/team" replace />} />
+                  <Route path="taxes" element={<TaxesPage />} />
+                  <Route path="taxes/new" element={<TaxFormPage />} />
+                  <Route path="taxes/:taxId" element={<TaxFormPage />} />
                   <Route path="attributes" element={<ModuleListPage module={modules.attributes} />} />
                   <Route path="attributes/new" element={<ModuleFormPage module={modules.attributes} />} />
                   <Route path="attributes/:attributeId" element={<ModuleFormPage module={modules.attributes} mode="edit" />} />
                   <Route path="payment-terms" element={<ModuleListPage module={modules.paymentTerms} />} />
                   <Route path="payment-terms/new" element={<ModuleFormPage module={modules.paymentTerms} />} />
                   <Route path="payment-terms/:paymentTermId" element={<ModuleFormPage module={modules.paymentTerms} mode="edit" />} />
-                  <Route path="discounts" element={<ModuleListPage module={modules.discounts} />} />
-                  <Route path="discounts/new" element={<ModuleFormPage module={modules.discounts} />} />
-                  <Route path="discounts/:discountId" element={<ModuleFormPage module={modules.discounts} mode="edit" />} />
+                  <Route path="discounts" element={<DiscountsPage />} />
+                  <Route path="discounts/new" element={<DiscountFormPage />} />
+                  <Route path="discounts/:discountId" element={<DiscountFormPage />} />
                   <Route path="billing-runs" element={<ModuleListPage module={modules.billingRuns} />} />
                   <Route path="billing-runs/:runId" element={<ModuleFormPage module={modules.billingRuns} mode="edit" />} />
-                  <Route path="reports" element={<ModuleListPage module={modules.reports} />} />
+                  <Route path="reports" element={<DashboardPage />} />
                   <Route path="notifications" element={<ModuleListPage module={modules.notifications} />} />
                 </Route>
 
                 <Route path="invoices" element={<InvoicesPage />} />
+                <Route path="invoices/new" element={<InvoiceCreatePage />} />
                 <Route path="invoices/:invoiceUuid" element={<InvoiceDetailPage />} />
 
                 <Route element={<CustomerOnlyRoute />}>
