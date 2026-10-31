@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.conf import settings
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q, CheckConstraint, UniqueConstraint
 from django.utils import timezone
@@ -10,6 +10,16 @@ from apps.core.models import TimeStampedModel, PublicUUIDModel
 from apps.customers.models import Customer
 from apps.subscriptions.models import Subscription
 from apps.catalog.models import Product, TaxRule
+
+
+gstin_validator = RegexValidator(
+    regex=r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$",
+    message=_("Enter a valid 15-character GSTIN."),
+)
+state_code_validator = RegexValidator(
+    regex=r"^[0-9]{2}$",
+    message=_("Enter the two-digit GST state code."),
+)
 
 
 class Invoice(PublicUUIDModel, TimeStampedModel):
@@ -105,6 +115,29 @@ class Invoice(PublicUUIDModel, TimeStampedModel):
     pdf_document = models.FileField(upload_to="invoices/%Y/%m/", blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
+    # GST document snapshots. These retain the party details that applied when the
+    # invoice was issued, even when a customer later updates their billing profile.
+    supplier_legal_name = models.CharField(max_length=255, blank=True)
+    supplier_address = models.TextField(blank=True)
+    supplier_gstin = models.CharField(max_length=15, blank=True, validators=[gstin_validator])
+    supplier_state_name = models.CharField(max_length=128, blank=True)
+    supplier_state_code = models.CharField(max_length=2, blank=True, validators=[state_code_validator])
+    supplier_authorised_signatory = models.CharField(max_length=255, blank=True)
+    recipient_legal_name = models.CharField(max_length=255, blank=True)
+    recipient_address = models.TextField(blank=True)
+    recipient_gstin = models.CharField(max_length=15, blank=True, validators=[gstin_validator])
+    recipient_state_name = models.CharField(max_length=128, blank=True)
+    recipient_state_code = models.CharField(max_length=2, blank=True, validators=[state_code_validator])
+    place_of_supply_state_name = models.CharField(max_length=128, blank=True)
+    place_of_supply_state_code = models.CharField(max_length=2, blank=True, validators=[state_code_validator])
+    reverse_charge = models.BooleanField(default=False)
+
+    # E-invoice data is conditional: it is populated only where the taxpayer and
+    # transaction are within the e-invoicing mandate.
+    irn = models.CharField(max_length=64, blank=True, help_text=_("Invoice Reference Number from the IRP, if applicable."))
+    acknowledgement_number = models.CharField(max_length=64, blank=True)
+    acknowledgement_date = models.DateTimeField(blank=True, null=True)
+
     class Meta:
         verbose_name = _("invoice")
         verbose_name_plural = _("invoices")
@@ -189,11 +222,29 @@ class InvoiceLine(TimeStampedModel):
         default=Decimal("0.00"),
         validators=[MinValueValidator(Decimal("0.00"))]
     )
+    hsn_sac = models.CharField(
+        max_length=16,
+        blank=True,
+        help_text=_("HSN for goods or SAC for services, captured as an invoice snapshot."),
+    )
+    unit = models.CharField(max_length=16, default="NOS", help_text=_("Unit or UQC, for example NOS, MONTH or YEAR."))
     tax_amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         default=Decimal("0.00"),
         validators=[MinValueValidator(Decimal("0.00"))]
+    )
+    cess_rate_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    cess_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
     )
     discount_amount = models.DecimalField(
         max_digits=12,
