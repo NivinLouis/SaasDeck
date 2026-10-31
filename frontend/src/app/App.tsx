@@ -4,7 +4,9 @@ import { AuthProvider } from "../auth/AuthContext";
 import { useAuth } from "../auth/useAuth";
 import { AppShell } from "../layouts/AppShell";
 import { LoginPage, RegisterPage } from "../pages/AuthPages";
-import { CustomersPage, ProfilePage, WorkspaceHome } from "../pages/WorkspacePages";
+import { InvoiceDetailPage, InvoicesPage } from "../pages/InvoicePages";
+import { ModuleFormPage, ModuleListPage, modules } from "../pages/ModulePages";
+import { CustomerCreatePage, CustomersPage, ProfilePage, WorkspaceHome } from "../pages/WorkspacePages";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
@@ -19,11 +21,92 @@ function CustomerOnlyRoute() {
   return user?.role === "customer" ? <Outlet /> : <Navigate to="/" replace />;
 }
 
+function InternalOnlyRoute() {
+  const { user } = useAuth();
+  return user?.role === "admin" || user?.role === "staff" ? <Outlet /> : <Navigate to="/portal/profile" replace />;
+}
+
+function AdminOnlyRoute() {
+  const { user } = useAuth();
+  return user?.role === "admin" ? <Outlet /> : <Navigate to="/" replace />;
+}
+
 function RoleHome() {
   const { user } = useAuth();
   return user?.role === "customer" ? <Navigate to="/portal/profile" replace /> : <WorkspaceHome />;
 }
 
 export function App() {
-  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><Routes><Route path="/login" element={<LoginPage />} /><Route path="/register" element={<RegisterPage />} /><Route element={<ProtectedRoute />}><Route element={<AppShell />}><Route index element={<RoleHome />} /><Route path="customers" element={<CustomersPage />} /><Route element={<CustomerOnlyRoute />}><Route path="portal/profile" element={<ProfilePage />} /></Route></Route></Route><Route path="*" element={<Navigate to="/" replace />} /></Routes></BrowserRouter></AuthProvider></QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppShell />}>
+                <Route index element={<RoleHome />} />
+                <Route path="settings/security" element={<ModuleFormPage module={modules.security} />} />
+
+                <Route element={<InternalOnlyRoute />}>
+                  <Route path="customers" element={<CustomersPage />} />
+                  <Route path="customers/new" element={<CustomerCreatePage />} />
+                  <Route path="customers/:customerId" element={<ModuleFormPage module={modules.customerEdit} mode="edit" />} />
+                  <Route path="quotation-templates" element={<ModuleListPage module={modules.quotationTemplates} />} />
+                  <Route path="quotation-templates/new" element={<ModuleFormPage module={modules.quotationTemplates} />} />
+                  <Route path="quotation-templates/:templateId" element={<ModuleFormPage module={modules.quotationTemplates} mode="edit" />} />
+                  <Route path="subscriptions" element={<ModuleListPage module={modules.subscriptions} />} />
+                  <Route path="subscriptions/new" element={<ModuleFormPage module={modules.subscriptions} />} />
+                  <Route path="subscriptions/:subscriptionId" element={<ModuleFormPage module={modules.subscriptions} mode="edit" />} />
+                  <Route path="payments" element={<ModuleListPage module={modules.payments} />} />
+                  <Route path="payments/new" element={<ModuleFormPage module={modules.payments} />} />
+                  <Route path="payments/:paymentId" element={<ModuleFormPage module={modules.payments} mode="edit" />} />
+                </Route>
+
+                <Route element={<AdminOnlyRoute />}>
+                  <Route path="team" element={<ModuleListPage module={modules.team} />} />
+                  <Route path="team/new" element={<ModuleFormPage module={modules.team} />} />
+                  <Route path="team/:userId" element={<ModuleFormPage module={modules.team} mode="edit" />} />
+                  <Route path="products" element={<ModuleListPage module={modules.products} />} />
+                  <Route path="products/new" element={<ModuleFormPage module={modules.products} />} />
+                  <Route path="products/:productId" element={<ModuleFormPage module={modules.products} mode="edit" />} />
+                  <Route path="taxes" element={<ModuleListPage module={modules.taxes} />} />
+                  <Route path="taxes/new" element={<ModuleFormPage module={modules.taxes} />} />
+                  <Route path="taxes/:taxId" element={<ModuleFormPage module={modules.taxes} mode="edit" />} />
+                  <Route path="attributes" element={<ModuleListPage module={modules.attributes} />} />
+                  <Route path="attributes/new" element={<ModuleFormPage module={modules.attributes} />} />
+                  <Route path="attributes/:attributeId" element={<ModuleFormPage module={modules.attributes} mode="edit" />} />
+                  <Route path="plans" element={<ModuleListPage module={modules.plans} />} />
+                  <Route path="plans/new" element={<ModuleFormPage module={modules.plans} />} />
+                  <Route path="plans/:planId" element={<ModuleFormPage module={modules.plans} mode="edit" />} />
+                  <Route path="payment-terms" element={<ModuleListPage module={modules.paymentTerms} />} />
+                  <Route path="payment-terms/new" element={<ModuleFormPage module={modules.paymentTerms} />} />
+                  <Route path="payment-terms/:paymentTermId" element={<ModuleFormPage module={modules.paymentTerms} mode="edit" />} />
+                  <Route path="discounts" element={<ModuleListPage module={modules.discounts} />} />
+                  <Route path="discounts/new" element={<ModuleFormPage module={modules.discounts} />} />
+                  <Route path="discounts/:discountId" element={<ModuleFormPage module={modules.discounts} mode="edit" />} />
+                  <Route path="billing-runs" element={<ModuleListPage module={modules.billingRuns} />} />
+                  <Route path="billing-runs/:runId" element={<ModuleFormPage module={modules.billingRuns} mode="edit" />} />
+                  <Route path="reports" element={<ModuleListPage module={modules.reports} />} />
+                  <Route path="notifications" element={<ModuleListPage module={modules.notifications} />} />
+                </Route>
+
+                <Route path="invoices" element={<InvoicesPage />} />
+                <Route path="invoices/:invoiceUuid" element={<InvoiceDetailPage />} />
+
+                <Route element={<CustomerOnlyRoute />}>
+                  <Route path="portal/profile" element={<ProfilePage />} />
+                  <Route path="portal/subscriptions" element={<ModuleListPage module={modules.portalSubscriptions} />} />
+                  <Route path="portal/subscriptions/:subscriptionId" element={<ModuleFormPage module={modules.portalSubscriptionDetail} mode="edit" />} />
+                  <Route path="portal/invoices" element={<Navigate to="/invoices" replace />} />
+                </Route>
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
 }

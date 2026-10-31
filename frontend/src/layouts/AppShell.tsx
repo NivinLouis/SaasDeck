@@ -7,8 +7,10 @@ export function AppShell() {
   const navigate = useNavigate();
   const isCustomer = user?.role === "customer";
   const links = isCustomer
-    ? [{ to: "/portal/profile", label: "My profile" }]
-    : [{ to: "/", label: "Overview" }, { to: "/customers", label: "Customers" }];
+    ? [{ to: "/portal/profile", label: "My profile" }, { to: "/portal/subscriptions", label: "My subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/settings/security", label: "Security" }]
+    : user?.role === "admin"
+      ? [{ to: "/", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/team", label: "Team" }, { to: "/products", label: "Products" }, { to: "/plans", label: "Plans" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/reports", label: "Reports" }, { to: "/settings/security", label: "Security" }]
+      : [{ to: "/", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/settings/security", label: "Security" }];
 
   async function handleLogout() {
     await logout();
@@ -29,7 +31,15 @@ export function AppShell() {
           <Button type="button" tone="quiet" onClick={handleLogout}>Sign out</Button>
         </div>
       </aside>
-      <main className="main-content"><Outlet /></main>
+      <main className="main-content">
+        <header className="topbar">
+          <div><p className="eyebrow">SaasDeck</p><span>{isCustomer ? "Customer portal" : "Operations workspace"}</span></div>
+          <NavLink className="topbar__profile" to={isCustomer ? "/portal/profile" : "/"} aria-label="Open account area">
+            <span>{user?.full_name.slice(0, 1).toUpperCase()}</span><strong>{user?.full_name}</strong>
+          </NavLink>
+        </header>
+        <div className="main-content__body"><Outlet /></div>
+      </main>
     </div>
   );
 }

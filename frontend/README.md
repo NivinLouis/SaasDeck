@@ -16,5 +16,7 @@ The backend must allow `http://localhost:5173` through `DJANGO_CORS_ALLOWED_ORIG
 - `/register` - customer registration
 - `/customers` - staff/admin customer directory
 - `/portal/profile` - customer profile editing
+- `/invoices` - role-scoped invoice list
+- `/invoices/:invoiceUuid` - invoice detail, lifecycle actions, and PDF download
 
 Access tokens and refresh tokens are kept in memory only. A browser refresh ends the session until the backend offers an HttpOnly cookie refresh-token contract.
