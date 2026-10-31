@@ -134,6 +134,29 @@ export interface Plan {
   updated_at: string;
 }
 
+export interface QuotationTemplateLine {
+  id: number;
+  product: number;
+  product_name: string;
+  variant: number | null;
+  variant_value: string | null;
+  quantity: number;
+  discount_percent: string;
+}
+
+export interface QuotationTemplate {
+  uuid: string;
+  name: string;
+  plan: number;
+  plan_detail: Pick<Plan, "id" | "name" | "code" | "price" | "currency" | "billing_interval" | "interval_count">;
+  validity_days: number;
+  terms_and_conditions: string | null;
+  is_active: boolean;
+  lines: QuotationTemplateLine[];
+  created_at: string;
+  updated_at: string;
+}
+
 export type SubscriptionStatus = "DRAFT" | "QUOTATION" | "CONFIRMED" | "TRIAL" | "ACTIVE" | "PAUSED" | "CANCELLED" | "EXPIRED" | "CLOSED";
 
 export interface Subscription {
@@ -143,6 +166,11 @@ export interface Subscription {
   customer_detail: Pick<Customer, "id" | "name" | "company" | "email">;
   plan: number;
   plan_detail: Pick<Plan, "id" | "name" | "code" | "price" | "currency" | "billing_interval" | "interval_count">;
+  applied_discount: string | null;
+  template: number | null;
+  template_detail: { uuid: string; name: string; validity_days: number } | null;
+  quotation_valid_until: string | null;
+  lines: Array<{ id: number; product: number; product_name: string; variant: number | null; variant_value: string | null; quantity: number; unit_price: string; discount_percent: string }>;
   status: SubscriptionStatus;
   start_date: string | null;
   expiry_date: string | null;

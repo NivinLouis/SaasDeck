@@ -11,6 +11,7 @@ import { InvoiceCreatePage } from "../pages/InvoiceCreatePage";
 import { ModuleFormPage, ModuleListPage, modules } from "../pages/ModulePages";
 import { PaymentDetailPage, PaymentFormPage, PaymentsPage } from "../pages/PaymentPages";
 import { PlanFormPage, PlansPage, ProductFormPage, ProductsPage } from "../pages/CatalogPages";
+import { CreateQuotationPage, QuotationTemplateFormPage, QuotationTemplatesPage } from "../pages/QuotationPages";
 import { SubscriptionDetailPage, SubscriptionFormPage, SubscriptionsPage } from "../pages/SubscriptionPages";
 import { CustomerCreatePage, CustomerEditPage, CustomersPage, ProfilePage } from "../pages/WorkspacePages";
 import { LandingPage } from "../pages/LandingPage";
@@ -62,9 +63,10 @@ export function App() {
                   <Route path="customers" element={<CustomersPage />} />
                   <Route path="customers/new" element={<CustomerCreatePage />} />
                   <Route path="customers/:customerId" element={<CustomerEditPage />} />
-                  <Route path="quotation-templates" element={<ModuleListPage module={modules.quotationTemplates} />} />
-                  <Route path="quotation-templates/new" element={<ModuleFormPage module={modules.quotationTemplates} />} />
-                  <Route path="quotation-templates/:templateId" element={<ModuleFormPage module={modules.quotationTemplates} mode="edit" />} />
+                  <Route path="quotation-templates" element={<QuotationTemplatesPage />} />
+                  <Route path="quotation-templates/new" element={<QuotationTemplateFormPage />} />
+                  <Route path="quotation-templates/:templateId" element={<QuotationTemplateFormPage />} />
+                  <Route path="quotation-templates/:templateId/quotations/new" element={<CreateQuotationPage />} />
                   <Route path="subscriptions" element={<SubscriptionsPage />} />
                   <Route path="subscriptions/new" element={<SubscriptionFormPage />} />
                   <Route path="subscriptions/:subscriptionId" element={<SubscriptionDetailPage />} />
