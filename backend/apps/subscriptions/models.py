@@ -66,8 +66,11 @@ class Subscription(PublicUUIDModel, TimeStampedModel):
         DRAFT = "DRAFT", _("Draft")
         QUOTATION = "QUOTATION", _("Quotation Sent")
         CONFIRMED = "CONFIRMED", _("Confirmed")
+        TRIAL = "TRIAL", _("Trial")
         ACTIVE = "ACTIVE", _("Active")
         PAUSED = "PAUSED", _("Paused")
+        CANCELLED = "CANCELLED", _("Cancelled")
+        EXPIRED = "EXPIRED", _("Expired")
         CLOSED = "CLOSED", _("Closed")
 
     subscription_number = models.CharField(
