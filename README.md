@@ -113,3 +113,6 @@ The repository also contains pre-registered feature modules for `catalog`, `plan
 Each has dedicated models, serializers, views, services, tasks, migrations, and tests
 locations so the team can build independently without collapsing business logic into
 one app. See [`docs/backend-app-ownership.md`](docs/backend-app-ownership.md).
+
+Database modeling and migration instructions are available in
+[`docs/database-teammate-guide.md`](docs/database-teammate-guide.md).
