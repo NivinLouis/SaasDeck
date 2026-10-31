@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils.timezone import localdate, now
 from rest_framework.exceptions import ValidationError
 
-from .models import Subscription
+from .models import QuotationTemplate, Subscription, SubscriptionLine
 
 
 def validate_discount_for_subscription(discount, plan):
@@ -110,12 +110,68 @@ def advance_subscription_billing_period(*, subscription_id):
 
 
 @transaction.atomic
+def create_quotation_from_template(*, template, customer, created_by, start_date=None, expiry_date=None, auto_renew=None):
+    """Create a quotation-stage subscription and snapshot the template's product lines."""
+    template = QuotationTemplate.objects.select_related("plan", "plan__product", "plan__payment_term").prefetch_related(
+        "lines__product__product_taxes__tax", "lines__variant"
+    ).get(pk=template.pk)
+    if not template.is_active:
+        raise ValidationError({"template": "Archived quotation templates cannot be used."})
+
+    subscription = create_subscription(
+        customer=customer,
+        plan=template.plan,
+        created_by=created_by,
+        start_date=start_date,
+        expiry_date=expiry_date,
+        auto_renew=auto_renew,
+    )
+    subscription.status = Subscription.Status.QUOTATION
+    subscription.template = template
+    subscription.save(update_fields=["status", "template", "updated_at"])
+
+    for line in template.lines.all():
+        tax_link = line.product.product_taxes.select_related("tax").filter(tax__is_active=True).first()
+        unit_price = line.variant.final_price if line.variant_id else line.product.sales_price
+        SubscriptionLine.objects.create(
+            subscription=subscription,
+            product=line.product,
+            variant=line.variant,
+            quantity=line.quantity,
+            unit_price=unit_price,
+            tax_rule=tax_link.tax if tax_link else None,
+            discount_percent=line.discount_percent,
+        )
+    if not template.lines.exists() and template.plan.product_id:
+        product = template.plan.product
+        tax_link = product.product_taxes.select_related("tax").filter(tax__is_active=True).first()
+        SubscriptionLine.objects.create(
+            subscription=subscription,
+            product=product,
+            quantity=template.plan.minimum_quantity,
+            unit_price=template.plan.price,
+            tax_rule=tax_link.tax if tax_link else None,
+        )
+    return subscription
+
+
+@transaction.atomic
 def transition_subscription(*, subscription_id, action, cancellation_reason=""):
-    subscription = Subscription.objects.select_for_update().select_related("plan").get(pk=subscription_id)
+    subscription = Subscription.objects.select_related("plan", "template").select_for_update(of=("self",)).get(pk=subscription_id)
     current = subscription.status
 
-    if action == "activate":
-        if current not in {Subscription.Status.DRAFT, Subscription.Status.CONFIRMED, Subscription.Status.TRIAL}:
+    if action == "send_quotation":
+        if current != Subscription.Status.DRAFT:
+            raise ValidationError({"status": "Only draft subscriptions can be sent as quotations."})
+        subscription.status = Subscription.Status.QUOTATION
+    elif action == "confirm":
+        if current != Subscription.Status.QUOTATION:
+            raise ValidationError({"status": "Only sent quotations can be confirmed."})
+        if subscription.template and subscription.created_at.date() + timedelta(days=subscription.template.validity_days) < localdate():
+            raise ValidationError({"status": "This quotation has expired and cannot be confirmed."})
+        subscription.status = Subscription.Status.CONFIRMED
+    elif action == "activate":
+        if current not in {Subscription.Status.CONFIRMED, Subscription.Status.TRIAL}:
             raise ValidationError({"status": f"Cannot activate a subscription in {current} state."})
         subscription.status = (
             Subscription.Status.TRIAL
