@@ -16,7 +16,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
     "corsheaders", "rest_framework", "rest_framework_simplejwt.token_blacklist",
     "django_filters", "django_celery_beat",
-    "apps.core", "apps.accounts", "apps.customers",
+    "apps.core", "apps.accounts", "apps.customers", "apps.catalog", "apps.plans",
+    "apps.subscriptions", "apps.discounts", "apps.billing", "apps.payments",
+    "apps.reports", "apps.notifications",
 ]
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware", "django.middleware.security.SecurityMiddleware",
