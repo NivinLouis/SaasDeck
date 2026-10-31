@@ -74,3 +74,13 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list("DJANGO_CORS_ALLOWED_ORIGINS", default=[])
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
+
+# Required to issue a GST tax invoice. Do not use placeholder values in production.
+GST_INVOICE_SUPPLIER = {
+    "legal_name": env("GST_INVOICE_SUPPLIER_LEGAL_NAME", default=""),
+    "address": env("GST_INVOICE_SUPPLIER_ADDRESS", default=""),
+    "gstin": env("GST_INVOICE_SUPPLIER_GSTIN", default=""),
+    "state_name": env("GST_INVOICE_SUPPLIER_STATE_NAME", default=""),
+    "state_code": env("GST_INVOICE_SUPPLIER_STATE_CODE", default=""),
+    "authorised_signatory": env("GST_INVOICE_AUTHORISED_SIGNATORY", default=""),
+}

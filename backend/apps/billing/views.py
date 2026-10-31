@@ -1,20 +1,20 @@
-from django.http import FileResponse
+"""Invoice API and GST tax-invoice HTML view."""
+
+from django.http import FileResponse, HttpResponse
 from rest_framework import generics, status
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Invoice
 from .serializers import InvoiceSerializer
-from .services import cancel_invoice, confirm_invoice
+from .services import InvoiceDocumentValidationError, cancel_invoice, confirm_invoice, render_tax_invoice_html
 
 
 def invoice_queryset_for(user):
     queryset = Invoice.objects.select_related("customer", "subscription").prefetch_related("lines")
-    if user.is_internal_staff:
-        return queryset
-    return queryset.filter(customer__user=user)
+    return queryset if user.is_internal_staff else queryset.filter(customer__user=user)
 
 
 class InvoiceListView(generics.ListAPIView):
@@ -65,12 +65,22 @@ class InvoiceCancelView(InvoiceActionView):
 
 
 class InvoicePdfView(InvoiceActionView):
-    """Download a generated document. PDF generation is owned by the PDF feature branch."""
     def get(self, request, uuid):
         invoice = self.get_invoice(request, uuid)
         if not invoice.pdf_document:
-            return Response(
-                {"code": "pdf_not_ready", "message": "The invoice PDF has not been generated yet."},
-                status=status.HTTP_409_CONFLICT,
-            )
+            return Response({"code": "pdf_not_ready", "message": "The invoice PDF has not been generated yet."}, status=status.HTTP_409_CONFLICT)
         return FileResponse(invoice.pdf_document.open("rb"), content_type="application/pdf", filename=f"{invoice.invoice_number}.pdf")
+
+
+class TaxInvoiceHTMLView(InvoiceActionView):
+    """Render a final GST tax invoice as print-ready HTML for a PDF worker."""
+
+    def get(self, request, uuid):
+        invoice = self.get_invoice(request, uuid)
+        try:
+            html = render_tax_invoice_html(invoice, strict=True)
+        except InvoiceDocumentValidationError as exc:
+            raise ValidationError({"invoice": [str(exc)]}) from exc
+        response = HttpResponse(html, content_type="text/html; charset=utf-8")
+        response["Content-Disposition"] = f'inline; filename="tax-invoice-{invoice.invoice_number}.html"'
+        return response

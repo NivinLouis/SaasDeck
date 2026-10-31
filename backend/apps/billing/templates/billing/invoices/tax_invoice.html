@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tax Invoice {{ invoice.invoice_number }}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { color: #172033; font: 10px/1.4 Arial, sans-serif; margin: 0; }
+    .invoice { border: 1px solid #24324b; }
+    .header, .party-grid, .meta-grid, .footer-grid { display: grid; }
+    .header { grid-template-columns: 1fr auto; gap: 18px; padding: 16px; border-bottom: 1px solid #24324b; }
+    .brand { font-size: 18px; font-weight: 700; color: #123d78; }
+    .muted { color: #5f6b7a; }
+    .title { font-size: 20px; font-weight: 700; text-align: right; letter-spacing: .04em; }
+    .meta-grid { grid-template-columns: repeat(2, 1fr); border-bottom: 1px solid #24324b; }
+    .meta-grid > div { padding: 7px 10px; border-right: 1px solid #c8d0db; border-bottom: 1px solid #c8d0db; }
+    .meta-grid > div:nth-child(2n) { border-right: 0; }
+    .label { display: block; color: #5f6b7a; font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .party-grid { grid-template-columns: 1fr 1fr; border-bottom: 1px solid #24324b; }
+    .party { min-height: 120px; padding: 12px; }
+    .party + .party { border-left: 1px solid #24324b; }
+    .party h2 { font-size: 11px; margin: 0 0 8px; }
+    .party p { margin: 3px 0; white-space: pre-line; }
+    table { border-collapse: collapse; width: 100%; }
+    th { background: #e9f0f9; font-size: 8px; text-transform: uppercase; }
+    th, td { border: 1px solid #c8d0db; padding: 6px 5px; vertical-align: top; }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    td.center, th.center { text-align: center; }
+    .totals { margin-left: auto; width: 49%; }
+    .totals td { border-top: 0; }
+    .totals tr:last-child { font-size: 12px; font-weight: 700; background: #e9f0f9; }
+    .words { padding: 10px 12px; border-top: 1px solid #24324b; }
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; border-top: 1px solid #24324b; }
+    .signatory { min-height: 80px; text-align: right; }
+    .signature-line { border-top: 1px solid #24324b; display: inline-block; margin-top: 45px; min-width: 190px; padding-top: 4px; }
+    .notice { font-size: 8px; color: #5f6b7a; }
+    @media print { .invoice { border-color: #000; } }
+  </style>
+</head>
+<body>
+  <main class="invoice">
+    <header class="header">
+      <section>
+        <div class="brand">{{ supplier.legal_name }}</div>
+        <div class="muted">{{ supplier.address|linebreaksbr }}</div>
+        <p><strong>GSTIN:</strong> {{ supplier.gstin }}<br><strong>State:</strong> {{ supplier.state_name }} ({{ supplier.state_code }})</p>
+      </section>
+      <section>
+        <div class="title">TAX INVOICE</div>
+        {% if invoice.irn %}<div><strong>IRN:</strong> {{ invoice.irn }}</div>{% endif %}
+        {% if invoice.acknowledgement_number %}<div><strong>Ack. No.:</strong> {{ invoice.acknowledgement_number }}</div>{% endif %}
+      </section>
+    </header>
+
+    <section class="meta-grid">
+      <div><span class="label">Invoice number</span>{{ invoice.invoice_number }}</div>
+      <div><span class="label">Invoice date</span>{{ invoice.issue_date|date:"d M Y" }}</div>
+      <div><span class="label">Due date / payment terms</span>{{ invoice.due_date|date:"d M Y" }} · {{ invoice.payment_terms }}</div>
+      <div><span class="label">Place of supply</span>{{ invoice.place_of_supply_state_name }} ({{ invoice.place_of_supply_state_code }})</div>
+      <div><span class="label">Reverse charge</span>{% if invoice.reverse_charge %}Yes{% else %}No{% endif %}</div>
+      <div><span class="label">Supply type</span>{% if inter_state %}Inter-state (IGST){% else %}Intra-state (CGST + SGST){% endif %}</div>
+    </section>
+
+    <section class="party-grid">
+      <section class="party">
+        <h2>Bill From</h2>
+        <p><strong>{{ supplier.legal_name }}</strong></p>
+        <p>{{ supplier.address }}</p>
+        <p>GSTIN: {{ supplier.gstin }}<br>State: {{ supplier.state_name }} ({{ supplier.state_code }})</p>
+      </section>
+      <section class="party">
+        <h2>Bill To</h2>
+        <p><strong>{{ recipient.legal_name }}</strong></p>
+        <p>{{ recipient.address }}</p>
+        <p>GSTIN: {% if recipient.gstin %}{{ recipient.gstin }}{% else %}Unregistered{% endif %}<br>State: {{ recipient.state_name }} ({{ recipient.state_code }})</p>
+      </section>
+    </section>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="center">#</th><th>Description</th><th>HSN/SAC</th><th class="center">Qty / UQC</th><th class="num">Rate</th><th class="num">Discount</th><th class="num">Taxable value</th>
+          {% if inter_state %}<th class="num">IGST</th>{% else %}<th class="num">CGST</th><th class="num">SGST</th>{% endif %}
+          <th class="num">Cess</th><th class="num">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td class="center">{{ forloop.counter }}</td><td>{{ line.description }}</td><td>{{ line.hsn_sac }}</td><td class="center">{{ line.quantity }} {{ line.unit }}</td><td class="num">₹{{ line.unit_price|floatformat:2 }}</td><td class="num">₹{{ line.discount_amount|floatformat:2 }}</td><td class="num">₹{{ line.taxable_value|floatformat:2 }}</td>
+          {% if inter_state %}<td class="num">{{ line.tax_rate_percent|floatformat:2 }}%<br>₹{{ line.igst|floatformat:2 }}</td>{% else %}<td class="num">₹{{ line.cgst|floatformat:2 }}</td><td class="num">₹{{ line.sgst|floatformat:2 }}</td>{% endif %}
+          <td class="num">₹{{ line.cess_amount|floatformat:2 }}</td><td class="num">₹{{ line.line_total|floatformat:2 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <table class="totals">
+      <tbody>
+        <tr><td>Taxable value</td><td class="num">₹{{ totals.taxable_value|floatformat:2 }}</td></tr>
+        {% if inter_state %}<tr><td>IGST</td><td class="num">₹{{ totals.igst|floatformat:2 }}</td></tr>{% else %}<tr><td>CGST</td><td class="num">₹{{ totals.cgst|floatformat:2 }}</td></tr><tr><td>SGST</td><td class="num">₹{{ totals.sgst|floatformat:2 }}</td></tr>{% endif %}
+        <tr><td>Cess</td><td class="num">₹{{ totals.cess|floatformat:2 }}</td></tr>
+        <tr><td>Invoice total</td><td class="num">₹{{ totals.total|floatformat:2 }}</td></tr>
+      </tbody>
+    </table>
+
+    <section class="words"><span class="label">Amount chargeable in words</span><strong>{{ amount_in_words }}</strong></section>
+    <footer class="footer-grid">
+      <section>
+        <strong>Notes</strong><br>{{ invoice.notes|default:"No additional notes."|linebreaksbr }}
+        <p class="notice">This document is generated from immutable invoice snapshots. E-invoice acknowledgement and QR details must be included when applicable to the supplier.</p>
+      </section>
+      <section class="signatory">
+        <strong>For {{ supplier.legal_name }}</strong><br>
+        <span class="signature-line">Authorised signatory: {{ supplier.authorised_signatory }}</span>
+      </section>
+    </footer>
+  </main>
+</body>
+</html>
