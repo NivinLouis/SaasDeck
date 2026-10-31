@@ -82,6 +82,11 @@ class Invoice(PublicUUIDModel, TimeStampedModel):
         null=True,
         help_text=_("When the latest invoice email was successfully sent."),
     )
+    overdue_reminder_sent_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text=_("When the overdue reminder was last delivered."),
+    )
 
     # Monetary Snapshots (never modified by catalog updates)
     subtotal_amount = models.DecimalField(

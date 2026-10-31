@@ -7,7 +7,14 @@ from django.db import transaction
 from django.utils.timezone import localdate, now
 from rest_framework.exceptions import ValidationError
 
-from .models import QuotationTemplate, Subscription, SubscriptionLine
+from .models import QuotationTemplate, Subscription, SubscriptionAuditEvent, SubscriptionLine
+
+
+def record_subscription_audit(*, subscription, action, from_status="", actor=None, reason=""):
+    SubscriptionAuditEvent.objects.create(
+        subscription=subscription, actor=actor, action=action,
+        from_status=from_status, to_status=subscription.status, reason=reason,
+    )
 
 
 def validate_discount_for_subscription(discount, plan):
@@ -56,7 +63,7 @@ def create_subscription(*, customer, plan, created_by, start_date=None, expiry_d
     next_period_start = add_billing_interval(start_date, plan)
     payment_terms = plan.payment_term.name if plan.payment_term else "Immediate Payment"
 
-    return Subscription.objects.create(
+    subscription = Subscription.objects.create(
         subscription_number=subscription_number(),
         customer=customer,
         plan=plan,
@@ -71,6 +78,16 @@ def create_subscription(*, customer, plan, created_by, start_date=None, expiry_d
         applied_discount=applied_discount,
         created_by=created_by,
     )
+    record_subscription_audit(subscription=subscription, action="created", actor=created_by)
+    return subscription
+
+
+def _set_active_billing_period(subscription, period_start):
+    """Set the next billable period after activation or a customer resume."""
+    next_billing_date = add_billing_interval(period_start, subscription.plan)
+    subscription.current_period_start = period_start
+    subscription.current_period_end = next_billing_date - timedelta(days=1)
+    subscription.next_billing_date = next_billing_date
 
 
 @transaction.atomic
@@ -88,6 +105,12 @@ def advance_subscription_billing_period(*, subscription_id):
         raise ValidationError({"subscription": "Subscription billing dates are required before advancing."})
 
     next_period_start = subscription.current_period_end + timedelta(days=1)
+    if not subscription.auto_renew:
+        subscription.status = Subscription.Status.CLOSED
+        subscription.next_billing_date = None
+        subscription.closed_at = now()
+        subscription.save(update_fields=["status", "next_billing_date", "closed_at", "updated_at"])
+        return subscription
     if subscription.expiry_date and next_period_start > subscription.expiry_date:
         update_fields = ["next_billing_date", "updated_at"]
         subscription.next_billing_date = None
@@ -156,7 +179,7 @@ def create_quotation_from_template(*, template, customer, created_by, start_date
 
 
 @transaction.atomic
-def transition_subscription(*, subscription_id, action, cancellation_reason=""):
+def transition_subscription(*, subscription_id, action, cancellation_reason="", customer_initiated=False, actor=None):
     subscription = Subscription.objects.select_related("plan", "template").select_for_update(of=("self",)).get(pk=subscription_id)
     current = subscription.status
 
@@ -173,11 +196,24 @@ def transition_subscription(*, subscription_id, action, cancellation_reason=""):
     elif action == "activate":
         if current not in {Subscription.Status.CONFIRMED, Subscription.Status.TRIAL}:
             raise ValidationError({"status": f"Cannot activate a subscription in {current} state."})
-        subscription.status = (
-            Subscription.Status.TRIAL
-            if current != Subscription.Status.TRIAL and subscription.plan.trial_period_days > 0
-            else Subscription.Status.ACTIVE
-        )
+        today = localdate()
+        if current == Subscription.Status.TRIAL:
+            if subscription.current_period_end and subscription.current_period_end >= today:
+                raise ValidationError({"status": "The trial has not ended yet."})
+            subscription.status = Subscription.Status.ACTIVE
+            _set_active_billing_period(subscription, subscription.current_period_end + timedelta(days=1))
+        elif subscription.start_date and subscription.start_date > today:
+            raise ValidationError({"start_date": "The subscription cannot be activated before its start date."})
+        elif subscription.plan.trial_period_days > 0:
+            subscription.status = Subscription.Status.TRIAL
+            subscription.start_date = today
+            subscription.current_period_start = today
+            subscription.current_period_end = today + timedelta(days=subscription.plan.trial_period_days - 1)
+            subscription.next_billing_date = None
+        else:
+            subscription.status = Subscription.Status.ACTIVE
+            subscription.start_date = today
+            _set_active_billing_period(subscription, today)
     elif action == "pause":
         if current != Subscription.Status.ACTIVE:
             raise ValidationError({"status": "Only active subscriptions can be paused."})
@@ -188,9 +224,12 @@ def transition_subscription(*, subscription_id, action, cancellation_reason=""):
         if current != Subscription.Status.PAUSED:
             raise ValidationError({"status": "Only paused subscriptions can be resumed."})
         subscription.status = Subscription.Status.ACTIVE
+        _set_active_billing_period(subscription, localdate())
     elif action == "cancel":
         if current in {Subscription.Status.CANCELLED, Subscription.Status.EXPIRED, Subscription.Status.CLOSED}:
             raise ValidationError({"status": f"Cannot cancel a subscription in {current} state."})
+        if current in {Subscription.Status.ACTIVE, Subscription.Status.PAUSED, Subscription.Status.TRIAL} and not subscription.plan.allow_early_closure:
+            raise ValidationError({"status": "This plan does not allow early closure."})
         subscription.status = Subscription.Status.CANCELLED
         subscription.auto_renew = False
         subscription.cancellation_reason = cancellation_reason.strip()
@@ -199,4 +238,51 @@ def transition_subscription(*, subscription_id, action, cancellation_reason=""):
         raise ValidationError({"action": "Unsupported subscription action."})
 
     subscription.save()
+    if current != subscription.status:
+        record_subscription_audit(subscription=subscription, action=action, from_status=current, actor=actor, reason=cancellation_reason)
     return subscription
+
+
+def run_subscription_lifecycle(*, as_of=None):
+    """Advance completed trials and close subscriptions that have reached expiry."""
+    as_of = as_of or localdate()
+    summary = {"as_of": as_of.isoformat(), "trials_activated": 0, "closed": 0, "expired": 0}
+    trial_ids = Subscription.objects.filter(
+        status=Subscription.Status.TRIAL, current_period_end__lt=as_of
+    ).values_list("id", flat=True)
+    for subscription_id in trial_ids:
+        with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().select_related("plan").get(pk=subscription_id)
+            if subscription.status != Subscription.Status.TRIAL or not subscription.current_period_end or subscription.current_period_end >= as_of:
+                continue
+            subscription.status = Subscription.Status.ACTIVE
+            _set_active_billing_period(subscription, subscription.current_period_end + timedelta(days=1))
+            subscription.save(update_fields=["status", "current_period_start", "current_period_end", "next_billing_date", "updated_at"])
+            record_subscription_audit(subscription=subscription, action="trial_completed", from_status=Subscription.Status.TRIAL)
+            summary["trials_activated"] += 1
+
+    expiry_ids = Subscription.objects.filter(
+        status__in=[Subscription.Status.ACTIVE, Subscription.Status.PAUSED, Subscription.Status.TRIAL],
+        expiry_date__lt=as_of,
+    ).values_list("id", flat=True)
+    for subscription_id in expiry_ids:
+        with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().select_related("plan").get(pk=subscription_id)
+            if subscription.status not in {Subscription.Status.ACTIVE, Subscription.Status.PAUSED, Subscription.Status.TRIAL} or not subscription.expiry_date or subscription.expiry_date >= as_of:
+                continue
+            subscription.next_billing_date = None
+            if subscription.plan.auto_close_on_expiry:
+                previous_status = subscription.status
+                subscription.status = Subscription.Status.CLOSED
+                subscription.auto_renew = False
+                subscription.closed_at = now()
+                summary["closed"] += 1
+                subscription.save(update_fields=["status", "auto_renew", "closed_at", "next_billing_date", "updated_at"])
+                record_subscription_audit(subscription=subscription, action="expired_auto_close", from_status=previous_status)
+            else:
+                previous_status = subscription.status
+                subscription.status = Subscription.Status.EXPIRED
+                summary["expired"] += 1
+                subscription.save(update_fields=["status", "next_billing_date", "updated_at"])
+                record_subscription_audit(subscription=subscription, action="expired", from_status=previous_status)
+    return summary

@@ -111,7 +111,7 @@ export type BillingInterval = "daily" | "weekly" | "monthly" | "yearly";
 export interface Plan {
   id: number;
   product: number | null;
-  product_detail: Pick<Product, "id" | "name" | "sku" | "product_type" | "sales_price"> | null;
+  product_detail: Pick<Product, "id" | "name" | "sku" | "description" | "product_type" | "sales_price"> | null;
   name: string;
   code: string;
   description: string | null;
@@ -130,6 +130,30 @@ export interface Plan {
   available_from: string | null;
   available_until: string | null;
   is_active: boolean;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationTemplateLine {
+  id: number;
+  product: number;
+  product_name: string;
+  variant: number | null;
+  variant_value: string | null;
+  quantity: number;
+  discount_percent: string;
+}
+
+export interface QuotationTemplate {
+  uuid: string;
+  name: string;
+  plan: number;
+  plan_detail: Pick<Plan, "id" | "name" | "code" | "price" | "currency" | "billing_interval" | "interval_count">;
+  validity_days: number;
+  terms_and_conditions: string | null;
+  is_active: boolean;
+  lines: QuotationTemplateLine[];
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +167,12 @@ export interface Subscription {
   customer_detail: Pick<Customer, "id" | "name" | "company" | "email">;
   plan: number;
   plan_detail: Pick<Plan, "id" | "name" | "code" | "price" | "currency" | "billing_interval" | "interval_count">;
+  applied_discount: string | null;
+  template: number | null;
+  template_detail: { uuid: string; name: string; validity_days: number } | null;
+  quotation_valid_until: string | null;
+  lines: Array<{ id: number; product: number; product_name: string; variant: number | null; variant_value: string | null; quantity: number; unit_price: string; discount_percent: string }>;
+  audit_events: Array<{ action: string; from_status: string; to_status: string; reason: string; actor_email: string | null; created_at: string }>;
   status: SubscriptionStatus;
   start_date: string | null;
   expiry_date: string | null;
@@ -186,6 +216,63 @@ export interface Tax {
   updated_at: string;
 }
 
+export interface ProductAttribute {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductVariant {
+  id: number;
+  product: number;
+  attribute: number;
+  value: string;
+  price_extra: string;
+  final_price: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentTerm {
+  id: number;
+  name: string;
+  days: number;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingRun {
+  uuid: string;
+  run_date: string;
+  status: "STARTED" | "COMPLETED" | "PARTIAL" | "FAILED";
+  triggered_by_email: string | null;
+  finished_at: string | null;
+  subscriptions_considered: number;
+  invoices_created: number;
+  invoices_existing: number;
+  failures: Array<{ subscription?: string; message?: string }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Notification {
+  uuid: string;
+  title: string;
+  body: string;
+  category: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationPreference {
+  email_overdue_reminders: boolean;
+  in_app_overdue_reminders: boolean;
+}
+
 export type DiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
 export type DiscountScope = "SUBSCRIPTION" | "PRODUCTS" | "PLANS";
 
@@ -211,6 +298,8 @@ export interface DiscountRule {
 }
 
 export interface DashboardSummary {
+  filters?: { start_date: string | null; end_date: string | null };
   subscriptions: { total: number; by_status: Partial<Record<SubscriptionStatus, number>> };
   invoices: { total: number; paid_total: string; outstanding_total: string; overdue_count: number };
+  trend?: Array<{ month: string; invoiced_total: string; paid_total: string; invoice_count: number }>;
 }

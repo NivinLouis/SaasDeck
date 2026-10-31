@@ -1,12 +1,14 @@
 """Subscription command and response serializers."""
 from datetime import timedelta
 
+from django.utils.timezone import localdate
+
 from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.plans.models import Plan
 
-from .models import QuotationTemplate, QuotationTemplateLine, Subscription, SubscriptionLine
+from .models import QuotationTemplate, QuotationTemplateLine, Subscription, SubscriptionAuditEvent, SubscriptionLine
 from .services import create_quotation_from_template, create_subscription, validate_plan_for_subscription
 
 
@@ -29,6 +31,14 @@ class SubscriptionLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionLine
         fields = ("id", "product", "product_name", "variant", "variant_value", "quantity", "unit_price", "discount_percent")
+
+
+class SubscriptionAuditEventSerializer(serializers.ModelSerializer):
+    actor_email = serializers.EmailField(source="actor.email", read_only=True, allow_null=True)
+
+    class Meta:
+        model = SubscriptionAuditEvent
+        fields = ("action", "from_status", "to_status", "reason", "actor_email", "created_at")
 
 
 class QuotationTemplateLineSerializer(serializers.ModelSerializer):
@@ -100,6 +110,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     template_detail = serializers.SerializerMethodField()
     quotation_valid_until = serializers.SerializerMethodField()
     lines = SubscriptionLineSerializer(many=True, read_only=True)
+    audit_events = SubscriptionAuditEventSerializer(many=True, read_only=True)
 
     def get_template_detail(self, subscription):
         if not subscription.template_id:
@@ -116,7 +127,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         fields = (
             "uuid", "subscription_number", "customer", "customer_detail", "plan", "plan_detail",
             "applied_discount",
-            "template", "template_detail", "quotation_valid_until", "lines",
+            "template", "template_detail", "quotation_valid_until", "lines", "audit_events",
             "status", "start_date", "expiry_date", "current_period_start", "current_period_end",
             "next_billing_date", "payment_terms", "auto_renew", "cancellation_reason", "closed_at",
             "created_at", "updated_at",
@@ -149,3 +160,15 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
 class CancelSubscriptionSerializer(serializers.Serializer):
     cancellation_reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class CustomerPlanRequestSerializer(serializers.Serializer):
+    plan = serializers.PrimaryKeyRelatedField(queryset=Plan.objects.select_related("product", "payment_term"))
+    start_date = serializers.DateField(required=False)
+
+    def validate_plan(self, plan):
+        validate_plan_for_subscription(plan)
+        today = localdate()
+        if (plan.available_from and plan.available_from > today) or (plan.available_until and plan.available_until < today):
+            raise serializers.ValidationError("This plan is not currently available for requests.")
+        return plan

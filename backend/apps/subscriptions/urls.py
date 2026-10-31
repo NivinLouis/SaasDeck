@@ -4,6 +4,11 @@ from .views import (
     ActivateSubscriptionView,
     CancelSubscriptionView,
     ConfirmSubscriptionView,
+    CustomerAcceptQuotationView,
+    CustomerCancelSubscriptionView,
+    CustomerPauseSubscriptionView,
+    CustomerPlanRequestView,
+    CustomerResumeSubscriptionView,
     CreateQuotationFromTemplateView,
     PauseSubscriptionView,
     QuotationTemplateDetailView,
@@ -11,6 +16,7 @@ from .views import (
     ResumeSubscriptionView,
     SendQuotationView,
     SubscriptionDetailView,
+    SubscriptionLifecycleRunView,
     SubscriptionListCreateView,
 )
 
@@ -27,4 +33,10 @@ urlpatterns = [
     path("subscriptions/<uuid:uuid>/pause", PauseSubscriptionView.as_view(), name="subscription-pause"),
     path("subscriptions/<uuid:uuid>/resume", ResumeSubscriptionView.as_view(), name="subscription-resume"),
     path("subscriptions/<uuid:uuid>/cancel", CancelSubscriptionView.as_view(), name="subscription-cancel"),
+    path("subscriptions/lifecycle/run", SubscriptionLifecycleRunView.as_view(), name="subscription-lifecycle-run"),
+    path("portal/subscriptions/<uuid:uuid>/accept", CustomerAcceptQuotationView.as_view(), name="portal-subscription-accept"),
+    path("portal/subscriptions/<uuid:uuid>/pause", CustomerPauseSubscriptionView.as_view(), name="portal-subscription-pause"),
+    path("portal/subscriptions/<uuid:uuid>/resume", CustomerResumeSubscriptionView.as_view(), name="portal-subscription-resume"),
+    path("portal/subscriptions/<uuid:uuid>/cancel", CustomerCancelSubscriptionView.as_view(), name="portal-subscription-cancel"),
+    path("portal/plan-requests", CustomerPlanRequestView.as_view(), name="portal-plan-request"),
 ]

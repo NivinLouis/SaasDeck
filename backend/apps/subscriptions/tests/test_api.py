@@ -9,7 +9,8 @@ from apps.accounts.models import User
 from apps.catalog.models import Product
 from apps.customers.models import Customer
 from apps.plans.models import Plan
-from apps.subscriptions.models import QuotationTemplate, QuotationTemplateLine, Subscription
+from apps.subscriptions.models import QuotationTemplate, QuotationTemplateLine, Subscription, SubscriptionAuditEvent
+from apps.subscriptions.services import run_subscription_lifecycle
 
 
 class SubscriptionApiTests(APITestCase):
@@ -82,6 +83,7 @@ class SubscriptionApiTests(APITestCase):
         self.assertEqual(cancel.data["status"], Subscription.Status.CANCELLED)
         self.assertEqual(cancel.data["cancellation_reason"], "No longer needed")
         self.assertEqual(invalid_pause.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(SubscriptionAuditEvent.objects.filter(subscription__uuid=created["uuid"]).count(), 7)
 
     def test_staff_creates_quotation_from_template_with_snapshot_lines(self):
         template = QuotationTemplate.objects.create(name="Cloud offer", plan=self.plan, validity_days=14)
@@ -121,6 +123,15 @@ class SubscriptionApiTests(APITestCase):
         self.assertEqual(create.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(activate.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_customer_can_request_an_available_plan(self):
+        self.client.force_authenticate(self.customer_user)
+        response = self.client.post(reverse("portal-plan-request"), {"plan": self.plan.id}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], Subscription.Status.DRAFT)
+        self.assertEqual(response.data["customer"], self.customer.id)
+        self.assertEqual(response.data["plan"], self.plan.id)
+
     def test_archived_plan_cannot_be_used(self):
         self.plan.is_active = False
         self.plan.save(update_fields=["is_active"])
@@ -131,3 +142,43 @@ class SubscriptionApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("plan", response.data["fields"])
+
+    def test_customer_can_accept_only_their_own_quotation(self):
+        template = QuotationTemplate.objects.create(name="Portal offer", plan=self.plan)
+        QuotationTemplateLine.objects.create(template=template, product=self.product)
+        self.client.force_authenticate(self.staff)
+        quotation = self.client.post(
+            reverse("quotation-template-create-quotation", kwargs={"uuid": template.uuid}),
+            {"customer": self.customer.id}, format="json",
+        ).data
+        self.client.force_authenticate(self.customer_user)
+
+        accepted = self.client.post(reverse("portal-subscription-accept", kwargs={"uuid": quotation["uuid"]}), {}, format="json")
+        hidden = self.client.post(reverse("portal-subscription-accept", kwargs={"uuid": Subscription.objects.create(subscription_number="SUB-OTHER-QUOTE", customer=self.other_customer, plan=self.plan, status=Subscription.Status.QUOTATION).uuid}), {}, format="json")
+
+        self.assertEqual(accepted.status_code, status.HTTP_200_OK)
+        self.assertEqual(accepted.data["status"], Subscription.Status.CONFIRMED)
+        self.assertEqual(hidden.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_lifecycle_task_activates_completed_trials_and_closes_expired_subscriptions(self):
+        trial_plan = Plan.objects.create(product=self.product, name="Trial plan", code="trial-plan", price=Decimal("99.00"), trial_period_days=7)
+        trial = Subscription.objects.create(
+            subscription_number="SUB-TRIAL", customer=self.customer, plan=trial_plan, status=Subscription.Status.TRIAL,
+            start_date=date(2026, 1, 1), current_period_start=date(2026, 1, 1), current_period_end=date(2026, 1, 7),
+        )
+        expired = Subscription.objects.create(
+            subscription_number="SUB-EXPIRED", customer=self.customer, plan=self.plan, status=Subscription.Status.ACTIVE,
+            start_date=date(2026, 1, 1), expiry_date=date(2026, 1, 31), current_period_start=date(2026, 1, 1),
+            current_period_end=date(2026, 1, 31), next_billing_date=date(2026, 2, 1),
+        )
+
+        summary = run_subscription_lifecycle(as_of=date(2026, 2, 1))
+        trial.refresh_from_db()
+        expired.refresh_from_db()
+
+        self.assertEqual(summary["trials_activated"], 1)
+        self.assertEqual(trial.status, Subscription.Status.ACTIVE)
+        self.assertEqual(trial.current_period_start, date(2026, 1, 8))
+        self.assertEqual(trial.next_billing_date, date(2026, 2, 8))
+        self.assertEqual(summary["closed"], 1)
+        self.assertEqual(expired.status, Subscription.Status.CLOSED)

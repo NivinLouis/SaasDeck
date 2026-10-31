@@ -15,3 +15,11 @@ class Notification(PublicUUIDModel, TimeStampedModel):
     class Meta:
         ordering = ("-created_at",)
         indexes = [models.Index(fields=("recipient", "read_at"), name="notif_recipient_read")]
+
+
+class NotificationPreference(TimeStampedModel):
+    """Per-user delivery choices. In-app messages remain enabled by default."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notification_preference")
+    email_overdue_reminders = models.BooleanField(default=True)
+    in_app_overdue_reminders = models.BooleanField(default=True)

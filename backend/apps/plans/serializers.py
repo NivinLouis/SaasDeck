@@ -9,7 +9,7 @@ from .models import PaymentTerm, Plan
 class ProductSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
-        fields = ("id", "name", "sku", "product_type", "sales_price")
+        fields = ("id", "name", "sku", "description", "product_type", "sales_price")
 
 
 class PaymentTermSummarySerializer(serializers.ModelSerializer):
@@ -37,6 +37,7 @@ class PlanSerializer(serializers.ModelSerializer):
             "payment_term", "payment_term_detail", "trial_period_days", "auto_close_on_expiry",
             "allow_early_closure", "allow_pause", "allow_auto_renewal", "available_from",
             "available_until", "is_active", "created_at", "updated_at",
+            "is_public",
         )
         read_only_fields = ("id", "product_detail", "payment_term_detail", "created_at", "updated_at")
         extra_kwargs = {"product": {"required": True, "allow_null": False}}

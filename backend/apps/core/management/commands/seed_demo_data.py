@@ -62,6 +62,8 @@ class Command(BaseCommand):
 
             # 4. Products, Attributes, and Variants (including +$560 Odoo variant)
             products, variants = self._seed_products_and_variants(taxes)
+            self._link_plans_to_products(plans, products)
+            plans.update(self._seed_public_software_catalog(payment_terms, taxes))
 
             # 5. Payment Terms & Plans
             payment_terms, plans = self._seed_plans_and_terms(products)
@@ -499,6 +501,71 @@ class Command(BaseCommand):
         self.stdout.write(f"  + Product (Add-on): {prod_addon.name}")
 
         return products, variants
+
+    def _link_plans_to_products(self, plans, products):
+        """Keep the customer-facing catalogue connected to the software it sells."""
+        product_for_plan = {
+            "starter-daily": "api",
+            "growth-weekly": "api",
+            "pro-monthly": "erp",
+            "enterprise-yearly": "erp",
+        }
+        for plan_code, product_key in product_for_plan.items():
+            plan = plans[plan_code]
+            plan.product = products[product_key]
+            plan.save(update_fields=["product", "updated_at"])
+            self.stdout.write(f"  ~ Linked {plan.name} to {products[product_key].name}")
+
+    def _seed_public_software_catalog(self, payment_terms, taxes):
+        """Five realistic SaaS products with tiered plans for the customer storefront."""
+        self.stdout.write("\n  + Seeding customer software catalogue...")
+        products = [
+            ("crm", "CRM Software", "SAAS-CRM", "Manage leads, contacts, pipelines, sales activity, and follow-ups in one sales workspace.", ("Basic", "Pro", "Enterprise"), (499, 999, 2499)),
+            ("projects", "Project Management", "SAAS-PROJECTS", "Plan projects, assign tasks, track deadlines, and keep every team member aligned.", ("Basic", "Pro", "Enterprise"), (299, 799, 1999)),
+            ("accounting", "Accounting & GST", "SAAS-ACCOUNTING", "Create invoices, track expenses, manage GST, and understand cash flow with live reports.", ("Basic", "Pro", "Enterprise"), (499, 1199, 2999)),
+            ("hr", "HR Management", "SAAS-HR", "Manage employee records, attendance, leave, payroll, and HR requests from one secure portal.", ("Basic", "Pro", "Enterprise"), (599, 1499, 3999)),
+            ("ai-support", "AI Customer Support Assistant", "SAAS-AI-SUPPORT", "An always-on AI assistant that answers customer questions and helps your support team resolve requests faster.", ("Starter", "Growth", "Business"), (499, 1499, 3999)),
+        ]
+        seeded_plans = {}
+        for key, name, sku, description, tiers, prices in products:
+            product, _ = Product.objects.update_or_create(
+                sku=sku,
+                defaults={
+                    "name": name,
+                    "description": description,
+                    "product_type": Product.ProductType.SERVICE,
+                    "sales_price": Decimal(str(prices[0])),
+                    "cost_price": Decimal("0.00"),
+                    "is_active": True,
+                },
+            )
+            ProductTax.objects.get_or_create(product=product, tax=taxes["GST 18%"])
+            for position, (tier, price) in enumerate(zip(tiers, prices)):
+                code = f"{key}-{tier.lower()}"
+                plan, _ = Plan.objects.update_or_create(
+                    code=code,
+                    defaults={
+                        "product": product,
+                        "name": f"{name} {tier}",
+                        "description": f"{tier} plan for {name}. {description}",
+                        "billing_interval": Plan.BillingInterval.MONTHLY,
+                        "interval_count": 1,
+                        "price": Decimal(str(price)),
+                        "currency": "INR",
+                        "minimum_quantity": 1 if position < 2 else 5,
+                        "payment_term": payment_terms["Immediate Payment"] if position == 0 else payment_terms["Net 15"],
+                        "trial_period_days": 14 if position == 0 else 7,
+                        "auto_close_on_expiry": True,
+                        "allow_early_closure": True,
+                        "allow_pause": True,
+                        "allow_auto_renewal": True,
+                        "is_active": True,
+                        "is_public": True,
+                    },
+                )
+                seeded_plans[code] = plan
+            self.stdout.write(f"    ~ {name}: {', '.join(tiers)}")
+        return seeded_plans
 
     def _seed_quotation_templates(self, plans, products, variants):
         self.stdout.write("\n[6/7] Seeding Quotation Templates...")

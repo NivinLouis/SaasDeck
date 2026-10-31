@@ -2,6 +2,7 @@
 from django.db.models import Q
 from django.utils.timezone import localdate
 from rest_framework import generics
+from rest_framework.permissions import AllowAny
 
 from apps.core.permissions import IsStaffOrAdmin
 
@@ -34,6 +35,7 @@ class PlanListCreateView(generics.ListCreateAPIView):
             today = localdate()
             return queryset.filter(
                 is_active=True,
+                is_public=True,
                 product__is_active=True,
             ).filter(
                 Q(available_from__isnull=True) | Q(available_from__lte=today),
@@ -67,3 +69,22 @@ class PlanDetailView(generics.RetrieveUpdateAPIView):
         if self.request.method in {"PUT", "PATCH"}:
             return [IsStaffOrAdmin()]
         return super().get_permissions()
+
+
+class PublicPlanShowcaseView(generics.ListAPIView):
+    """Unauthenticated plan catalogue; a customer account is required to request a quote."""
+
+    serializer_class = PlanSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        today = localdate()
+        return Plan.objects.select_related("product", "payment_term").filter(
+            is_active=True,
+            is_public=True,
+            product__is_active=True,
+        ).filter(
+            Q(available_from__isnull=True) | Q(available_from__lte=today),
+            Q(available_until__isnull=True) | Q(available_until__gte=today),
+        ).order_by("price")

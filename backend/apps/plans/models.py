@@ -126,6 +126,11 @@ class Plan(models.Model):
         help_text=_("Date after which new subscriptions cannot select this plan.")
     )
     is_active = models.BooleanField(default=True, db_index=True)
+    is_public = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=_("Show this plan in the customer software catalogue."),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
