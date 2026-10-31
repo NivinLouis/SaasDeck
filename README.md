@@ -71,6 +71,30 @@ Ensure you have the following installed locally:
    docker compose exec backend python manage.py test
    ```
 
+### Demo Data Seeding
+
+To populate the database with realistic demonstration data (Admin and Staff user accounts, products with attribute variants including the `+$560` Odoo variant, taxes, payment terms, billing plans across all intervals, quotation templates, and sample subscriptions in `DRAFT`, `QUOTATION`, `ACTIVE`, and `PAUSED` states):
+
+```bash
+docker compose run --rm backend python manage.py seed_demo_data
+```
+
+To wipe previously seeded demonstration records before re-populating, pass the `--clear` flag:
+
+```bash
+docker compose run --rm backend python manage.py seed_demo_data --clear
+```
+
+#### Default Demo Credentials:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| **Admin** | `admin@brightloop.io` | `Admin@Brightloop123!` |
+| **Staff** | `staff@brightloop.io` | `Staff@Brightloop123!` |
+| **Customer** | `acme.corp@example.com` | `Customer@Brightloop123!` |
+| **Customer** | `globex@example.com` | `Customer@Brightloop123!` |
+| **Customer** | `initech@example.com` | `Customer@Brightloop123!` |
+
 ## Foundation API
 
 All API paths start with `/api/v1` and accept JSON.
