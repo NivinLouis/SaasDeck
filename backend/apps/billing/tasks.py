@@ -1,6 +1,5 @@
 """Celery tasks for scheduled billing, email, and PDF generation."""
 from celery import shared_task
-
 from .services import generate_invoice_pdf, run_recurring_billing, send_invoice_email
 
 

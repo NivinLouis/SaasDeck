@@ -2,7 +2,7 @@
 
 **Scope:** invoice list/detail access, confirmation lifecycle, PDF handoff, GST tax-invoice HTML rendering, and non-mutating API load testing.
 
-**Revision:** `f557bed` (`main`)  
+**Revision:** `f557bed` (`main`)
 **Prepared:** 31 October 2026
 
 ## Automated coverage in the repository

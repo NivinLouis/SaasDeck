@@ -100,7 +100,6 @@ class InvoiceApiTests(APITestCase):
                 self.invoice.refresh_from_db()
                 download = self.client.get(f"/api/v1/invoices/{self.invoice.uuid}/pdf")
                 pdf_content = b"".join(download.streaming_content)
-                download.close()
         finally:
             shutil.rmtree(media_root, ignore_errors=True)
 

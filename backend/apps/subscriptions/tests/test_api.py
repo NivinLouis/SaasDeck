@@ -9,7 +9,7 @@ from apps.accounts.models import User
 from apps.catalog.models import Product
 from apps.customers.models import Customer
 from apps.plans.models import Plan
-from apps.subscriptions.models import Subscription
+from apps.subscriptions.models import QuotationTemplate, QuotationTemplateLine, Subscription
 
 
 class SubscriptionApiTests(APITestCase):
@@ -63,6 +63,8 @@ class SubscriptionApiTests(APITestCase):
     def test_lifecycle_transitions_and_invalid_pause(self):
         created = self.create_subscription()
         detail = {"uuid": created["uuid"]}
+        send_quotation = self.client.post(reverse("subscription-send-quotation", kwargs=detail), {}, format="json")
+        confirm = self.client.post(reverse("subscription-confirm", kwargs=detail), {}, format="json")
         activate = self.client.post(reverse("subscription-activate", kwargs=detail), {}, format="json")
         pause = self.client.post(reverse("subscription-pause", kwargs=detail), {}, format="json")
         resume = self.client.post(reverse("subscription-resume", kwargs=detail), {}, format="json")
@@ -71,6 +73,8 @@ class SubscriptionApiTests(APITestCase):
         )
         invalid_pause = self.client.post(reverse("subscription-pause", kwargs=detail), {}, format="json")
 
+        self.assertEqual(send_quotation.data["status"], Subscription.Status.QUOTATION)
+        self.assertEqual(confirm.data["status"], Subscription.Status.CONFIRMED)
         self.assertEqual(activate.status_code, status.HTTP_200_OK)
         self.assertEqual(activate.data["status"], Subscription.Status.ACTIVE)
         self.assertEqual(pause.data["status"], Subscription.Status.PAUSED)
@@ -78,6 +82,31 @@ class SubscriptionApiTests(APITestCase):
         self.assertEqual(cancel.data["status"], Subscription.Status.CANCELLED)
         self.assertEqual(cancel.data["cancellation_reason"], "No longer needed")
         self.assertEqual(invalid_pause.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_staff_creates_quotation_from_template_with_snapshot_lines(self):
+        template = QuotationTemplate.objects.create(name="Cloud offer", plan=self.plan, validity_days=14)
+        QuotationTemplateLine.objects.create(template=template, product=self.product, quantity=3, discount_percent=Decimal("10.00"))
+        self.client.force_authenticate(self.staff)
+
+        response = self.client.post(
+            reverse("quotation-template-create-quotation", kwargs={"uuid": template.uuid}),
+            {"customer": self.customer.id, "start_date": "2026-02-01"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], Subscription.Status.QUOTATION)
+        self.assertEqual(response.data["template"], template.id)
+        self.assertEqual(response.data["lines"][0]["quantity"], 3)
+        self.assertEqual(response.data["lines"][0]["discount_percent"], "10.00")
+
+    def test_draft_cannot_be_activated_without_quotation_confirmation(self):
+        created = self.create_subscription()
+        self.client.force_authenticate(self.staff)
+
+        response = self.client.post(reverse("subscription-activate", kwargs={"uuid": created["uuid"]}), {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_customer_cannot_create_or_change_lifecycle(self):
         self.client.force_authenticate(self.customer_user)
