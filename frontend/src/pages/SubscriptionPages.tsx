@@ -33,8 +33,8 @@ export function SubscriptionsPage({ portal = false }: { portal?: boolean }) {
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["subscriptions", portal ? "portal" : "operations", status], queryFn: () => api.get<PaginatedResponse<Subscription>>(query, token) });
   const pathFor = (subscription: Subscription) => portal ? `/portal/subscriptions/${subscription.uuid}` : `/subscriptions/${subscription.uuid}`;
   const columns: TableColumn<Subscription>[] = [
-    { id: "number", header: "Subscription", cell: (subscription) => <Link className="table-link" to={pathFor(subscription)}><strong>{subscription.subscription_number}</strong><small>{subscription.customer_detail.name}</small></Link> },
-    { id: "plan", header: "Plan", cell: (subscription) => <><strong>{subscription.plan_detail.name}</strong><small>{formatMoney(subscription.plan_detail.price, subscription.plan_detail.currency)}</small></> },
+    { id: "number", header: "Subscription", cell: (subscription) => <Link className="table-link" to={pathFor(subscription)}><strong>{subscription.subscription_number}</strong><small>{subscription.customer_detail?.name ?? "—"}</small></Link> },
+    { id: "plan", header: "Plan", cell: (subscription) => <><strong>{subscription.plan_detail?.name ?? "—"}</strong><small>{subscription.plan_detail ? formatMoney(subscription.plan_detail.price, subscription.plan_detail.currency) : "—"}</small></> },
     { id: "next-billing", header: "Next billing", cell: (subscription) => formatDate(subscription.next_billing_date) },
     { id: "expiry", header: "Expiry", cell: (subscription) => formatDate(subscription.expiry_date) },
     { id: "status", header: "Status", cell: (subscription) => <StatusBadge value={subscription.status} /> },

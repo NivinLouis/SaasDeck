@@ -16,13 +16,13 @@ function benefits(plan: Plan) {
     "SAAS-HR": ["Employee directory and attendance", "Leave and payroll workflows", "Secure HR records"],
     "SAAS-AI-SUPPORT": ["AI answers around the clock", "Ticket hand-off to your team", "Support insight dashboard"],
   };
-  return base[plan.product_detail.sku] ?? ["Secure cloud delivery", "Guided onboarding", "Flexible subscription management"];
+  return (plan.product_detail && base[plan.product_detail.sku]) ?? ["Secure cloud delivery", "Guided onboarding", "Flexible subscription management"];
 }
 
 export function PortalPlansPage({ embedded = false }: { embedded?: boolean }) {
   const token = useAccessToken(); const queryClient = useQueryClient(); const [requesting, setRequesting] = useState<number>(); const [notice, setNotice] = useState<string>(); const [selectedProduct, setSelectedProduct] = useState<number>();
   const plans = useQuery({ queryKey: ["portal-plans"], queryFn: () => api.get<PaginatedResponse<Plan>>("/plans?page_size=100", token) });
-  const groups = useMemo(() => { const byProduct = new Map<number, { name: string; description: string | null; plans: Plan[] }>(); for (const plan of plans.data?.results ?? []) { const group = byProduct.get(plan.product); if (group) group.plans.push(plan); else byProduct.set(plan.product, { name: plan.product_detail.name, description: plan.product_detail.description, plans: [plan] }); } return [...byProduct.entries()]; }, [plans.data]);
+  const groups = useMemo(() => { const byProduct = new Map<number, { name: string; description: string | null; plans: Plan[] }>(); for (const plan of plans.data?.results ?? []) { if (plan.product === null || !plan.product_detail) continue; const group = byProduct.get(plan.product); if (group) group.plans.push(plan); else byProduct.set(plan.product, { name: plan.product_detail.name, description: plan.product_detail.description, plans: [plan] }); } return [...byProduct.entries()]; }, [plans.data]);
   const activeProduct = selectedProduct ?? groups[0]?.[0]; const product = groups.find(([id]) => id === activeProduct)?.[1];
   async function requestPlan(plan: Plan) { setNotice(undefined); setRequesting(plan.id); try { const subscription = await api.post<Subscription>("/portal/plan-requests", { plan: plan.id }, token); await queryClient.invalidateQueries({ queryKey: ["subscriptions"] }); setNotice(`${plan.name} is ready for review. Our team will send a quotation for ${subscription.subscription_number}.`); } catch (error) { setNotice(error instanceof ApiError ? error.message : "The plan request could not be sent."); } finally { setRequesting(undefined); } }
   if (plans.isLoading) return <LoadingState title="Loading software options" description="Retrieving plans currently available to you." />;

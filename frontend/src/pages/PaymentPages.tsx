@@ -42,7 +42,7 @@ export function PaymentsPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["payments"], queryFn: () => api.get<PaginatedResponse<Payment>>("/payments?page_size=50", token) });
   const columns: TableColumn<Payment>[] = [
     { id: "payment", header: "Payment", cell: (payment) => <Link className="table-link" to={`/payments/${payment.uuid}`}><strong>{payment.payment_number}</strong><small>{payment.transaction_reference || "No external reference"}</small></Link> },
-    { id: "invoice", header: "Invoice", cell: (payment) => <Link className="table-link" to={`/invoices/${payment.invoice_detail.uuid}`}>{payment.invoice_detail.invoice_number}</Link> },
+    { id: "invoice", header: "Invoice", cell: (payment) => payment.invoice_detail ? <Link className="table-link" to={`/invoices/${payment.invoice_detail.uuid}`}>{payment.invoice_detail.invoice_number}</Link> : "—" },
     { id: "method", header: "Method", cell: (payment) => paymentMethodLabel(payment.payment_method) },
     { id: "amount", header: "Amount", cell: (payment) => <strong>{formatMoney(payment.amount, payment.currency)}</strong> },
     { id: "date", header: "Received", cell: (payment) => formatDateTime(payment.payment_date) },
