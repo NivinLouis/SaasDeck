@@ -1,21 +1,7 @@
-import { createContext, useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { TokenPair, User } from "../api/types";
-
-interface LoginPayload {
-  email: string;
-  password: string;
-}
-
-interface AuthContextValue {
-  user: User | null;
-  accessToken: string | null;
-  isAuthenticated: boolean;
-  login: (payload: LoginPayload) => Promise<User>;
-  logout: () => Promise<void>;
-}
-
-export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { AuthContext, type AuthContextValue, type LoginPayload } from "./context";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
