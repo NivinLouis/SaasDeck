@@ -10,6 +10,17 @@ from rest_framework.exceptions import ValidationError
 from .models import Subscription
 
 
+def validate_discount_for_subscription(discount, plan):
+    if not discount:
+        return
+    if not discount.is_currently_valid:
+        raise ValidationError({"applied_discount": "This discount is not currently valid."})
+    if discount.scope == "PLANS" and not discount.applicable_plans.filter(pk=plan.pk).exists():
+        raise ValidationError({"applied_discount": "This discount does not apply to this plan."})
+    if discount.scope == "PRODUCTS" and (not plan.product_id or not discount.applicable_products.filter(pk=plan.product_id).exists()):
+        raise ValidationError({"applied_discount": "This discount does not apply to this product."})
+
+
 def add_billing_interval(start_date, plan):
     """Return the first date of the following billing period without external dependencies."""
     count = plan.interval_count
@@ -38,8 +49,9 @@ def validate_plan_for_subscription(plan):
 
 
 @transaction.atomic
-def create_subscription(*, customer, plan, created_by, start_date=None, expiry_date=None, auto_renew=None):
+def create_subscription(*, customer, plan, created_by, start_date=None, expiry_date=None, auto_renew=None, applied_discount=None):
     validate_plan_for_subscription(plan)
+    validate_discount_for_subscription(applied_discount, plan)
     start_date = start_date or localdate()
     next_period_start = add_billing_interval(start_date, plan)
     payment_terms = plan.payment_term.name if plan.payment_term else "Immediate Payment"
@@ -56,6 +68,7 @@ def create_subscription(*, customer, plan, created_by, start_date=None, expiry_d
         next_billing_date=next_period_start,
         payment_terms=payment_terms,
         auto_renew=plan.allow_auto_renewal if auto_renew is None else auto_renew,
+        applied_discount=applied_discount,
         created_by=created_by,
     )
 

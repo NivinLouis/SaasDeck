@@ -1,7 +1,7 @@
 """API serializers for product and tax resources."""
 from rest_framework import serializers
 
-from .models import Product, ProductTax, Tax
+from .models import Product, ProductAttribute, ProductAttributeValue, ProductTax, Tax
 
 
 class TaxSummarySerializer(serializers.ModelSerializer):
@@ -15,6 +15,21 @@ class TaxSerializer(serializers.ModelSerializer):
         model = Tax
         fields = ("id", "name", "rate", "is_inclusive", "is_active", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
+
+
+class ProductAttributeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductAttribute
+        fields = ("id", "name", "description", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class ProductVariantSerializer(serializers.ModelSerializer):
+    final_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    class Meta:
+        model = ProductAttributeValue
+        fields = ("id", "product", "attribute", "value", "price_extra", "final_price", "created_at", "updated_at")
+        read_only_fields = ("id", "final_price", "created_at", "updated_at")
 
 
 class ProductSerializer(serializers.ModelSerializer):

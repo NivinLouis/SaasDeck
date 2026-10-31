@@ -5,8 +5,20 @@ from rest_framework import generics
 
 from apps.core.permissions import IsStaffOrAdmin
 
-from .models import Plan
-from .serializers import PlanSerializer
+from .models import PaymentTerm, Plan
+from .serializers import PaymentTermSerializer, PlanSerializer
+
+
+class PaymentTermListCreateView(generics.ListCreateAPIView):
+    serializer_class = PaymentTermSerializer
+    permission_classes = [IsStaffOrAdmin]
+    queryset = PaymentTerm.objects.all()
+
+
+class PaymentTermDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = PaymentTermSerializer
+    permission_classes = [IsStaffOrAdmin]
+    queryset = PaymentTerm.objects.all()
 
 
 class PlanListCreateView(generics.ListCreateAPIView):
