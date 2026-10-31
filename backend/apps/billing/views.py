@@ -1,5 +1,6 @@
 """Invoice API and GST tax-invoice HTML view."""
 
+from django.conf import settings
 from django.http import FileResponse, HttpResponse
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound, ValidationError
@@ -8,8 +9,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Invoice
-from .serializers import InvoiceSerializer
+from .serializers import InvoiceCreateSerializer, InvoiceSerializer
 from .services import InvoiceDocumentValidationError, cancel_invoice, confirm_invoice, render_tax_invoice_html
+from .tasks import generate_invoice_pdf_task
 
 
 def invoice_queryset_for(user):
@@ -17,7 +19,7 @@ def invoice_queryset_for(user):
     return queryset if user.is_internal_staff else queryset.filter(customer__user=user)
 
 
-class InvoiceListView(generics.ListAPIView):
+class InvoiceListView(generics.ListCreateAPIView):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ["status", "payment_status", "currency", "customer"]
@@ -27,6 +29,21 @@ class InvoiceListView(generics.ListAPIView):
 
     def get_queryset(self):
         return invoice_queryset_for(self.request.user)
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            from apps.core.permissions import IsStaffOrAdmin
+            return [IsStaffOrAdmin()]
+        return [IsAuthenticated()]
+
+    def get_serializer_class(self):
+        return InvoiceCreateSerializer if self.request.method == "POST" else InvoiceSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        invoice = serializer.save()
+        return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
 
 class InvoiceDetailView(generics.RetrieveAPIView):
@@ -53,7 +70,13 @@ class InvoiceConfirmView(InvoiceActionView):
         invoice = self.get_invoice(request, uuid)
         if not request.user.is_internal_staff:
             return Response({"code": "permission_denied", "message": "Only staff can confirm invoices."}, status=status.HTTP_403_FORBIDDEN)
-        return Response(InvoiceSerializer(confirm_invoice(invoice.id)).data)
+        confirmed = confirm_invoice(invoice.id)
+        if settings.INVOICE_PDF_ASYNC:
+            generate_invoice_pdf_task.delay(confirmed.id)
+        else:
+            generate_invoice_pdf_task(confirmed.id)
+        confirmed.refresh_from_db()
+        return Response(InvoiceSerializer(confirmed).data)
 
 
 class InvoiceCancelView(InvoiceActionView):

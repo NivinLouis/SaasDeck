@@ -1,16 +1,24 @@
 """Invoice lifecycle operations and GST-safe document rendering."""
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from io import BytesIO
 import re
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .models import Invoice
+from .models import Invoice, InvoiceLine
 
 MONEY_PLACES = PAISE = Decimal("0.01")
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$")
@@ -33,6 +41,89 @@ class SupplierProfile:
 
 def money(value: Decimal) -> Decimal:
     return (value or Decimal("0.00")).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
+
+
+def invoice_number() -> str:
+    """Collision-resistant reference suitable for user-facing invoice documents."""
+    from uuid import uuid4
+    return f"INV-{timezone.localdate():%Y}-{uuid4().hex[:8].upper()}"
+
+
+def _invoice_line_values(*, product, description, quantity, unit_price, discount_amount=Decimal("0.00"), tax_rule=None,
+                         tax_rate_percent=Decimal("0.00"), hsn_sac="", unit="NOS"):
+    taxable = money(Decimal(quantity) * unit_price - discount_amount)
+    tax_amount = money(taxable * tax_rate_percent / Decimal("100"))
+    return {
+        "product": product, "description": description, "quantity": quantity, "unit_price": money(unit_price),
+        "discount_amount": money(discount_amount), "tax_rule": tax_rule, "tax_rate_percent": money(tax_rate_percent),
+        "tax_amount": tax_amount, "line_total": money(taxable + tax_amount), "hsn_sac": hsn_sac, "unit": unit,
+    }
+
+
+@transaction.atomic
+def create_invoice(*, customer=None, subscription=None, issue_date=None, due_date=None, notes="", lines=None):
+    """Create a draft invoice manually or from the current billing period of an active subscription."""
+    from apps.subscriptions.models import Subscription
+
+    issue_date = issue_date or timezone.localdate()
+    lines = lines or []
+    if subscription:
+        subscription = Subscription.objects.select_for_update().select_related(
+            "customer", "plan", "plan__product", "plan__payment_term"
+        ).get(pk=subscription.pk)
+        if subscription.status != Subscription.Status.ACTIVE:
+            raise ValidationError({"subscription": "Only active subscriptions can be invoiced."})
+        if not subscription.current_period_start or not subscription.current_period_end:
+            raise ValidationError({"subscription": "Subscription billing dates are required before invoicing."})
+        if Invoice.objects.filter(
+            subscription=subscription,
+            billing_period_start=subscription.current_period_start,
+            billing_period_end=subscription.current_period_end,
+        ).exclude(status=Invoice.Status.CANCELLED).exists():
+            raise ValidationError({"subscription": "An invoice already exists for this billing period."})
+        customer = subscription.customer
+        payment_term = subscription.plan.payment_term
+        due_date = due_date or issue_date + timedelta(days=payment_term.days if payment_term else 0)
+        invoice = Invoice.objects.create(
+            invoice_number=invoice_number(), customer=customer, subscription=subscription, issue_date=issue_date,
+            due_date=due_date, billing_period_start=subscription.current_period_start,
+            billing_period_end=subscription.current_period_end, currency=subscription.plan.currency,
+            payment_terms=subscription.payment_terms, notes=notes or "", customer_snapshot=customer_snapshot(customer),
+        )
+        subscription_lines = list(subscription.lines.select_related("product", "tax_rule").all())
+        if subscription_lines:
+            for line in subscription_lines:
+                InvoiceLine.objects.create(invoice=invoice, **_invoice_line_values(
+                    product=line.product, description=line.product.name, quantity=line.quantity, unit_price=line.unit_price,
+                    discount_amount=money(line.unit_price * line.quantity * line.discount_percent / Decimal("100")),
+                    tax_rule=line.tax_rule, tax_rate_percent=line.tax_rule.rate if line.tax_rule else Decimal("0.00"),
+                ))
+        else:
+            product = subscription.plan.product
+            if not product:
+                raise ValidationError({"subscription": "The selected plan must have a product to create an invoice."})
+            tax_link = product.product_taxes.select_related("tax").filter(tax__is_active=True).first()
+            InvoiceLine.objects.create(invoice=invoice, **_invoice_line_values(
+                product=product, description=subscription.plan.name, quantity=subscription.plan.minimum_quantity,
+                unit_price=subscription.plan.price, tax_rule=tax_link.tax if tax_link else None,
+                tax_rate_percent=tax_link.tax.rate if tax_link else Decimal("0.00"),
+                unit="MONTH" if subscription.plan.billing_interval == "monthly" else subscription.plan.billing_interval.upper(),
+            ))
+    else:
+        if not customer:
+            raise ValidationError({"customer": "A customer is required for a manual invoice."})
+        if not lines:
+            raise ValidationError({"lines": "At least one line is required for a manual invoice."})
+        if not due_date:
+            raise ValidationError({"due_date": "A due date is required for a manual invoice."})
+        invoice = Invoice.objects.create(
+            invoice_number=invoice_number(), customer=customer, issue_date=issue_date, due_date=due_date,
+            notes=notes or "", customer_snapshot=customer_snapshot(customer),
+        )
+        for line in lines:
+            InvoiceLine.objects.create(invoice=invoice, **_invoice_line_values(**line))
+
+    return recalculate_invoice_totals(invoice.id)
 
 
 def _normalise_gstin(value):
@@ -228,3 +319,45 @@ def build_tax_invoice_context(invoice, *, strict=True):
 
 def render_tax_invoice_html(invoice, *, strict=True):
     return render_to_string("billing/invoices/tax_invoice.html", build_tax_invoice_context(invoice, strict=strict))
+
+
+@transaction.atomic
+def generate_invoice_pdf(invoice_id: int) -> Invoice:
+    """Render a durable, downloadable PDF from immutable invoice snapshots."""
+    invoice = Invoice.objects.select_for_update().select_related("customer").prefetch_related("lines").get(pk=invoice_id)
+    if invoice.status not in {Invoice.Status.CONFIRMED, Invoice.Status.PAID}:
+        raise ValidationError("Only confirmed or paid invoices can generate a PDF.")
+
+    snapshot = invoice.customer_snapshot or customer_snapshot(invoice.customer)
+    styles = getSampleStyleSheet()
+    buffer = BytesIO()
+    document = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=15 * mm, bottomMargin=15 * mm)
+    story = [
+        Paragraph("TAX INVOICE", styles["Title"]),
+        Spacer(1, 4 * mm),
+        Paragraph(f"<b>Invoice:</b> {invoice.invoice_number}<br/><b>Issue date:</b> {invoice.issue_date:%d %b %Y}<br/><b>Due date:</b> {invoice.due_date:%d %b %Y}", styles["Normal"]),
+        Spacer(1, 4 * mm),
+        Paragraph(f"<b>Bill to:</b> {snapshot.get('company') or snapshot.get('name', '')}<br/>{snapshot.get('billing_address', '')}<br/>{snapshot.get('email', '')}", styles["Normal"]),
+        Spacer(1, 6 * mm),
+    ]
+    rows = [["Description", "Qty", "Unit price", "Tax", "Total"]]
+    for line in invoice.lines.all():
+        rows.append([line.description, str(line.quantity), f"{invoice.currency} {line.unit_price:.2f}", f"{line.tax_rate_percent:.2f}%", f"{invoice.currency} {line.line_total:.2f}"])
+    rows.extend([
+        ["", "", "", "Subtotal", f"{invoice.currency} {invoice.subtotal_amount:.2f}"],
+        ["", "", "", "Tax", f"{invoice.currency} {invoice.tax_amount:.2f}"],
+        ["", "", "", "Total", f"{invoice.currency} {invoice.total_amount:.2f}"],
+    ])
+    table = Table(rows, colWidths=[70 * mm, 15 * mm, 30 * mm, 20 * mm, 35 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#24324B")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#D0D7E2")), ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (3, -3), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (3, -1), (-1, -1), colors.HexColor("#EAF0F8")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.extend([table, Spacer(1, 6 * mm), Paragraph("This is a system-generated invoice.", styles["Italic"])])
+    document.build(story)
+    invoice.pdf_document.save(f"{invoice.invoice_number}.pdf", ContentFile(buffer.getvalue()), save=False)
+    invoice.save(update_fields=["pdf_document", "updated_at"])
+    return invoice
