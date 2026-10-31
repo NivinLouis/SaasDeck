@@ -1,0 +1,1 @@
+"""Thin discount administration views."""
