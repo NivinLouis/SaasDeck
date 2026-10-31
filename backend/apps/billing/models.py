@@ -77,6 +77,11 @@ class Invoice(PublicUUIDModel, TimeStampedModel):
     issue_date = models.DateField(default=timezone.now, db_index=True)
     due_date = models.DateField(db_index=True)
     paid_at = models.DateTimeField(blank=True, null=True)
+    email_sent_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text=_("When the latest invoice email was successfully sent."),
+    )
 
     # Monetary Snapshots (never modified by catalog updates)
     subtotal_amount = models.DecimalField(
@@ -190,6 +195,43 @@ class Invoice(PublicUUIDModel, TimeStampedModel):
             and self.status != self.Status.CANCELLED
             and self.due_date < timezone.now().date()
         )
+
+
+class BillingRun(PublicUUIDModel, TimeStampedModel):
+    """An auditable execution of the recurring invoice generator."""
+
+    class Status(models.TextChoices):
+        RUNNING = "RUNNING", _("Running")
+        COMPLETED = "COMPLETED", _("Completed")
+        PARTIAL = "PARTIAL", _("Completed with errors")
+        FAILED = "FAILED", _("Failed")
+
+    run_date = models.DateField(db_index=True, help_text=_("The business date whose due subscriptions were processed."))
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RUNNING, db_index=True)
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="triggered_billing_runs",
+        help_text=_("Admin who started a manual run; blank for scheduled runs."),
+    )
+    finished_at = models.DateTimeField(blank=True, null=True)
+    subscriptions_considered = models.PositiveIntegerField(default=0)
+    invoices_created = models.PositiveIntegerField(default=0)
+    invoices_existing = models.PositiveIntegerField(default=0)
+    failures = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        verbose_name = _("billing run")
+        verbose_name_plural = _("billing runs")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["run_date", "status"], name="idx_billing_run_date_status"),
+        ]
+
+    def __str__(self):
+        return f"Billing run {self.uuid} for {self.run_date} ({self.get_status_display()})"
 
 
 class InvoiceLine(TimeStampedModel):

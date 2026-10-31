@@ -2,6 +2,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(DEBUG=(bool, False))
@@ -78,6 +79,25 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
 # Keep local development self-contained; set true in Docker/production with a Celery worker.
 INVOICE_PDF_ASYNC = env.bool("INVOICE_PDF_ASYNC", default=False)
+INVOICE_EMAIL_ASYNC = env.bool("INVOICE_EMAIL_ASYNC", default=False)
+DEFAULT_FROM_EMAIL = env("DJANGO_DEFAULT_FROM_EMAIL", default="billing@localhost")
+EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = env("DJANGO_EMAIL_HOST", default="")
+EMAIL_PORT = env.int("DJANGO_EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("DJANGO_EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("DJANGO_EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("DJANGO_EMAIL_USE_TLS", default=True)
+
+# The scheduler uses the project timezone and can be adjusted without changing code.
+CELERY_BEAT_SCHEDULE = {
+    "daily-recurring-billing": {
+        "task": "billing.run_daily_billing",
+        "schedule": crontab(
+            hour=env.int("BILLING_RUN_HOUR", default=1),
+            minute=env.int("BILLING_RUN_MINUTE", default=0),
+        ),
+    },
+}
 
 # Required to issue a GST tax invoice. Do not use placeholder values in production.
 GST_INVOICE_SUPPLIER = {
