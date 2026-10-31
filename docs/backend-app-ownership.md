@@ -21,3 +21,6 @@ transactions and constraints.
 
 Do not add a model migration until the relevant schema has been reviewed. Do not
 manually change PostgreSQL tables outside Django migrations.
+
+The database teammate's step-by-step implementation and migration checklist is in
+[`database-teammate-guide.md`](database-teammate-guide.md).

@@ -9,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.core.models import TimeStampedModel, PublicUUIDModel
 from apps.customers.models import Customer
 from apps.subscriptions.models import Subscription
-from apps.catalog.models import Product, TaxRule
+from apps.catalog.models import Product, Tax
 
 
 gstin_validator = RegexValidator(
@@ -112,6 +112,11 @@ class Invoice(PublicUUIDModel, TimeStampedModel):
 
     currency = models.CharField(max_length=3, default="INR")
     payment_terms = models.CharField(max_length=100, default="Immediate")
+    customer_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Immutable billing-contact snapshot used when rendering historical invoices.")
+    )
     pdf_document = models.FileField(upload_to="invoices/%Y/%m/", blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
@@ -159,6 +164,10 @@ class Invoice(PublicUUIDModel, TimeStampedModel):
             CheckConstraint(
                 check=Q(amount_paid__gte=Decimal("0.00")),
                 name="chk_invoice_amount_paid_positive"
+            ),
+            CheckConstraint(
+                check=Q(amount_paid__lte=models.F("total_amount")),
+                name="chk_invoice_amount_paid_lte_total"
             ),
         ]
         indexes = [
@@ -211,7 +220,7 @@ class InvoiceLine(TimeStampedModel):
         help_text=_("Historical snapshot price.")
     )
     tax_rule = models.ForeignKey(
-        TaxRule,
+        Tax,
         on_delete=models.PROTECT,
         blank=True,
         null=True

@@ -1,19 +1,18 @@
-"""GST-safe invoice document rendering and validation services.
-
-The document is intentionally rendered as HTML first.  It has page-size and print
-styles so a PDF engine can use the exact same source without a second layout.
-"""
+"""Invoice lifecycle operations and GST-safe document rendering."""
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 import re
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from .models import Invoice
 
-PAISE = Decimal("0.01")
+MONEY_PLACES = PAISE = Decimal("0.01")
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$")
 INVOICE_NUMBER_PATTERN = re.compile(r"^[A-Za-z0-9/-]{1,16}$")
 
@@ -32,8 +31,8 @@ class SupplierProfile:
     authorised_signatory: str
 
 
-def _money(value):
-    return Decimal(value or 0).quantize(PAISE, rounding=ROUND_HALF_UP)
+def money(value: Decimal) -> Decimal:
+    return (value or Decimal("0.00")).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
 
 
 def _normalise_gstin(value):
@@ -43,41 +42,24 @@ def _normalise_gstin(value):
 def _profile_from_settings():
     config = getattr(settings, "GST_INVOICE_SUPPLIER", {})
     return SupplierProfile(
-        legal_name=(config.get("legal_name") or "").strip(),
-        address=(config.get("address") or "").strip(),
-        gstin=_normalise_gstin(config.get("gstin")),
-        state_name=(config.get("state_name") or "").strip(),
+        legal_name=(config.get("legal_name") or "").strip(), address=(config.get("address") or "").strip(),
+        gstin=_normalise_gstin(config.get("gstin")), state_name=(config.get("state_name") or "").strip(),
         state_code=(config.get("state_code") or "").strip(),
         authorised_signatory=(config.get("authorised_signatory") or "").strip(),
     )
 
 
-def _recipient_details(invoice):
-    """Return the recipient's immutable issue-time identity."""
+def customer_snapshot(customer) -> dict:
     return {
-        "legal_name": invoice.recipient_legal_name,
-        "address": invoice.recipient_address,
-        "gstin": _normalise_gstin(invoice.recipient_gstin),
-        "state_name": invoice.recipient_state_name,
-        "state_code": invoice.recipient_state_code,
-    }
-
-
-def _supplier_details(invoice):
-    return {
-        "legal_name": invoice.supplier_legal_name,
-        "address": invoice.supplier_address,
-        "gstin": _normalise_gstin(invoice.supplier_gstin),
-        "state_name": invoice.supplier_state_name,
-        "state_code": invoice.supplier_state_code,
-        "authorised_signatory": invoice.supplier_authorised_signatory,
+        "name": customer.name, "company": customer.company, "email": customer.email, "phone": customer.phone,
+        "billing_address": customer.billing_address, "city": customer.city, "state": customer.state,
+        "country": customer.country, "postal_code": customer.postal_code, "tax_id": customer.tax_id,
     }
 
 
 def populate_invoice_gst_snapshots(invoice):
     """Copy party details to a draft before it is confirmed and saved."""
-    profile = _profile_from_settings()
-    customer = invoice.customer
+    profile, customer = _profile_from_settings(), invoice.customer
     invoice.supplier_legal_name = invoice.supplier_legal_name or profile.legal_name
     invoice.supplier_address = invoice.supplier_address or profile.address
     invoice.supplier_gstin = invoice.supplier_gstin or profile.gstin
@@ -97,130 +79,151 @@ def populate_invoice_gst_snapshots(invoice):
     return invoice
 
 
+@transaction.atomic
+def recalculate_invoice_totals(invoice_id: int) -> Invoice:
+    invoice = Invoice.objects.select_for_update().select_related("customer").get(pk=invoice_id)
+    if invoice.status != Invoice.Status.DRAFT:
+        raise ValidationError("Only draft invoices can be recalculated.")
+    lines = invoice.lines.all()
+    invoice.subtotal_amount = money(sum((line.unit_price * line.quantity - line.discount_amount for line in lines), Decimal("0.00")))
+    invoice.tax_amount = money(sum((line.tax_amount for line in lines), Decimal("0.00")))
+    invoice.discount_amount = money(sum((line.discount_amount for line in lines), Decimal("0.00")))
+    invoice.total_amount = money(sum((line.line_total for line in lines), Decimal("0.00")))
+    if not invoice.customer_snapshot:
+        invoice.customer_snapshot = customer_snapshot(invoice.customer)
+    populate_invoice_gst_snapshots(invoice)
+    invoice.save(update_fields=[
+        "subtotal_amount", "tax_amount", "discount_amount", "total_amount", "customer_snapshot",
+        "supplier_legal_name", "supplier_address", "supplier_gstin", "supplier_state_name", "supplier_state_code",
+        "supplier_authorised_signatory", "recipient_legal_name", "recipient_address", "recipient_gstin",
+        "recipient_state_name", "recipient_state_code", "place_of_supply_state_name", "place_of_supply_state_code", "updated_at",
+    ])
+    return invoice
+
+
+@transaction.atomic
+def confirm_invoice(invoice_id: int) -> Invoice:
+    invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
+    if invoice.status != Invoice.Status.DRAFT:
+        raise ValidationError("Only draft invoices can be confirmed.")
+    if not invoice.lines.exists():
+        raise ValidationError("An invoice requires at least one line before confirmation.")
+    invoice = recalculate_invoice_totals(invoice.id)
+    invoice.status = Invoice.Status.CONFIRMED
+    invoice.save(update_fields=["status", "updated_at"])
+    return invoice
+
+
+@transaction.atomic
+def cancel_invoice(invoice_id: int) -> Invoice:
+    invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
+    if invoice.status not in {Invoice.Status.DRAFT, Invoice.Status.CONFIRMED}:
+        raise ValidationError("Only draft or confirmed invoices can be cancelled.")
+    if invoice.amount_paid > Decimal("0.00") or invoice.payments.filter(status="COMPLETED").exists():
+        raise ValidationError("Invoices with recorded payments cannot be cancelled.")
+    invoice.status = Invoice.Status.CANCELLED
+    invoice.save(update_fields=["status", "updated_at"])
+    return invoice
+
+
+def build_invoice_pdf_context(invoice: Invoice) -> dict:
+    """Stable, snapshot-only contract for a generic PDF renderer."""
+    snapshot, lines = invoice.customer_snapshot or customer_snapshot(invoice.customer), invoice.lines.all().order_by("id")
+    return {
+        "invoice": {"number": invoice.invoice_number, "status": invoice.status, "issue_date": invoice.issue_date,
+                    "due_date": invoice.due_date, "billing_period_start": invoice.billing_period_start,
+                    "billing_period_end": invoice.billing_period_end, "currency": invoice.currency,
+                    "payment_terms": invoice.payment_terms, "notes": invoice.notes, "subtotal_amount": invoice.subtotal_amount,
+                    "discount_amount": invoice.discount_amount, "tax_amount": invoice.tax_amount,
+                    "total_amount": invoice.total_amount, "amount_paid": invoice.amount_paid, "amount_due": invoice.amount_due},
+        "customer": snapshot,
+        "lines": [{"description": line.description, "hsn_sac": line.hsn_sac, "unit": line.unit, "quantity": line.quantity,
+                   "unit_price": line.unit_price, "discount_amount": line.discount_amount, "tax_rate_percent": line.tax_rate_percent,
+                   "tax_amount": line.tax_amount, "cess_amount": line.cess_amount, "line_total": line.line_total} for line in lines],
+    }
+
+
+def _recipient_details(invoice):
+    return {"legal_name": invoice.recipient_legal_name, "address": invoice.recipient_address,
+            "gstin": _normalise_gstin(invoice.recipient_gstin), "state_name": invoice.recipient_state_name,
+            "state_code": invoice.recipient_state_code}
+
+
+def _supplier_details(invoice):
+    return {"legal_name": invoice.supplier_legal_name, "address": invoice.supplier_address,
+            "gstin": _normalise_gstin(invoice.supplier_gstin), "state_name": invoice.supplier_state_name,
+            "state_code": invoice.supplier_state_code, "authorised_signatory": invoice.supplier_authorised_signatory}
+
+
 def _line_context(line, inter_state):
-    taxable_value = _money(Decimal(line.quantity) * line.unit_price - line.discount_amount)
-    gst_amount = _money(line.tax_amount)
-    cess_amount = _money(line.cess_amount)
+    taxable_value, gst_amount, cess_amount = money(Decimal(line.quantity) * line.unit_price - line.discount_amount), money(line.tax_amount), money(line.cess_amount)
     if inter_state:
         cgst = sgst = Decimal("0.00")
         igst = gst_amount
     else:
         cgst = (gst_amount / 2).quantize(PAISE, rounding=ROUND_HALF_UP)
-        sgst = gst_amount - cgst
-        igst = Decimal("0.00")
-    return {
-        "description": line.description,
-        "hsn_sac": line.hsn_sac,
-        "quantity": line.quantity,
-        "unit": line.unit,
-        "unit_price": _money(line.unit_price),
-        "discount_amount": _money(line.discount_amount),
-        "taxable_value": taxable_value,
-        "tax_rate_percent": line.tax_rate_percent,
-        "cgst": cgst,
-        "sgst": sgst,
-        "igst": igst,
-        "cess_amount": cess_amount,
-        "line_total": _money(line.line_total),
-    }
+        sgst, igst = gst_amount - cgst, Decimal("0.00")
+    return {"description": line.description, "hsn_sac": line.hsn_sac, "quantity": line.quantity, "unit": line.unit,
+            "unit_price": money(line.unit_price), "discount_amount": money(line.discount_amount), "taxable_value": taxable_value,
+            "tax_rate_percent": line.tax_rate_percent, "cgst": cgst, "sgst": sgst, "igst": igst,
+            "cess_amount": cess_amount, "line_total": money(line.line_total)}
 
 
 def _amount_in_words(amount):
-    """Small, dependency-free INR formatter for a document footer."""
-    value = _money(amount)
-    number = int(value)
-    paise = int((value - number) * 100)
-    words_0_19 = (
-        "Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve "
-        "Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen"
-    ).split()
+    value = money(amount)
+    number, paise = int(value), int((value - int(value)) * 100)
+    words = "Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen".split()
     tens = "Zero Ten Twenty Thirty Forty Fifty Sixty Seventy Eighty Ninety".split()
-
     def two_digits(value):
-        if value < 20:
-            return words_0_19[value]
-        return tens[value // 10] + (" " + words_0_19[value % 10] if value % 10 else "")
-
-    def three_digits(value):
-        return (words_0_19[value // 100] + " Hundred" + (" " if value % 100 else "")) if value >= 100 else ""
-
+        return words[value] if value < 20 else tens[value // 10] + (" " + words[value % 10] if value % 10 else "")
     parts = []
     for divisor, label in ((10_000_000, "Crore"), (100_000, "Lakh"), (1_000, "Thousand")):
         if number >= divisor:
             count, number = divmod(number, divisor)
             parts.extend((two_digits(count), label))
     if number >= 100:
-        parts.append(three_digits(number))
+        parts.append(words[number // 100] + " Hundred")
         number %= 100
     if number:
         parts.append(two_digits(number))
     result = "Rupees " + " ".join(parts or ["Zero"])
-    if paise:
-        result += f" and {two_digits(paise)} Paise"
-    return result + " Only"
+    return result + (f" and {two_digits(paise)} Paise" if paise else "") + " Only"
 
 
 def validate_tax_invoice(invoice, lines, supplier, recipient):
-    """Validate the template's mandatory Rule 46 information before publishing."""
     errors = []
     if invoice.status not in {invoice.Status.CONFIRMED, invoice.Status.PAID}:
         errors.append("Only confirmed or paid invoices can be issued as tax invoices.")
     if not INVOICE_NUMBER_PATTERN.fullmatch(invoice.invoice_number):
         errors.append("Invoice number must be 1–16 characters and use only letters, digits, '-' or '/'.")
     for label, party in (("Supplier", supplier), ("Recipient", recipient)):
-        if not party["legal_name"]:
-            errors.append(f"{label} legal name is required.")
-        if not party["address"]:
-            errors.append(f"{label} address is required.")
-        if not party["state_name"] or not party["state_code"]:
-            errors.append(f"{label} state name and GST state code are required.")
-    if not GSTIN_PATTERN.fullmatch(supplier["gstin"]):
-        errors.append("Supplier GSTIN is missing or invalid.")
-    if recipient["gstin"] and not GSTIN_PATTERN.fullmatch(recipient["gstin"]):
-        errors.append("Recipient GSTIN is invalid.")
-    if not invoice.place_of_supply_state_name or not invoice.place_of_supply_state_code:
-        errors.append("Place of supply state name and GST state code are required.")
-    if not supplier["authorised_signatory"]:
-        errors.append("An authorised signatory is required in GST_INVOICE_SUPPLIER settings.")
-    if not lines:
-        errors.append("At least one invoice line is required.")
+        if not party["legal_name"]: errors.append(f"{label} legal name is required.")
+        if not party["address"]: errors.append(f"{label} address is required.")
+        if not party["state_name"] or not party["state_code"]: errors.append(f"{label} state name and GST state code are required.")
+    if not GSTIN_PATTERN.fullmatch(supplier["gstin"]): errors.append("Supplier GSTIN is missing or invalid.")
+    if recipient["gstin"] and not GSTIN_PATTERN.fullmatch(recipient["gstin"]): errors.append("Recipient GSTIN is invalid.")
+    if not invoice.place_of_supply_state_name or not invoice.place_of_supply_state_code: errors.append("Place of supply state name and GST state code are required.")
+    if not supplier["authorised_signatory"]: errors.append("Supplier authorised signatory is required.")
+    if not lines: errors.append("At least one invoice line is required.")
     for position, line in enumerate(lines, start=1):
-        if not line.hsn_sac:
-            errors.append(f"Line {position} requires an HSN/SAC code.")
-        if not line.unit:
-            errors.append(f"Line {position} requires a unit/UQC.")
-    if errors:
-        raise InvoiceDocumentValidationError(" ".join(errors))
+        if not line.hsn_sac: errors.append(f"Line {position} requires an HSN/SAC code.")
+        if not line.unit: errors.append(f"Line {position} requires a unit/UQC.")
+    if errors: raise InvoiceDocumentValidationError(" ".join(errors))
 
 
 def build_tax_invoice_context(invoice, *, strict=True):
-    """Build a complete, immutable-looking document context from an invoice."""
     lines = list(invoice.lines.all())
-    supplier = _supplier_details(invoice)
-    recipient = _recipient_details(invoice)
+    supplier, recipient = _supplier_details(invoice), _recipient_details(invoice)
     inter_state = supplier["state_code"] != invoice.place_of_supply_state_code
     document_lines = [_line_context(line, inter_state) for line in lines]
-    if strict:
-        validate_tax_invoice(invoice, lines, supplier, recipient)
-
-    totals = {
-        "taxable_value": sum((line["taxable_value"] for line in document_lines), Decimal("0.00")),
-        "cgst": sum((line["cgst"] for line in document_lines), Decimal("0.00")),
-        "sgst": sum((line["sgst"] for line in document_lines), Decimal("0.00")),
-        "igst": sum((line["igst"] for line in document_lines), Decimal("0.00")),
-        "cess": sum((line["cess_amount"] for line in document_lines), Decimal("0.00")),
-        "total": _money(invoice.total_amount),
-    }
-    return {
-        "invoice": invoice,
-        "supplier": supplier,
-        "recipient": recipient,
-        "lines": document_lines,
-        "totals": totals,
-        "inter_state": inter_state,
-        "amount_in_words": _amount_in_words(invoice.total_amount),
-        "generated_at": timezone.localtime(),
-    }
+    if strict: validate_tax_invoice(invoice, lines, supplier, recipient)
+    totals = {"taxable_value": sum((line["taxable_value"] for line in document_lines), Decimal("0.00")),
+              "cgst": sum((line["cgst"] for line in document_lines), Decimal("0.00")),
+              "sgst": sum((line["sgst"] for line in document_lines), Decimal("0.00")),
+              "igst": sum((line["igst"] for line in document_lines), Decimal("0.00")),
+              "cess": sum((line["cess_amount"] for line in document_lines), Decimal("0.00")), "total": money(invoice.total_amount)}
+    return {"invoice": invoice, "supplier": supplier, "recipient": recipient, "lines": document_lines, "totals": totals,
+            "inter_state": inter_state, "amount_in_words": _amount_in_words(invoice.total_amount), "generated_at": timezone.localtime()}
 
 
 def render_tax_invoice_html(invoice, *, strict=True):
