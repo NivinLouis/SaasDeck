@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api, ApiError } from "../api/client";
@@ -16,7 +16,7 @@ function useAccessToken() {
 }
 
 const customerColumns: TableColumn<Customer>[] = [
-  { id: "name", header: "Name", cell: (customer) => <><strong>{customer.name}</strong><small>{customer.email}</small></> },
+  { id: "name", header: "Name", cell: (customer) => <Link className="table-link" to={`/customers/${customer.id}`}><strong>{customer.name}</strong><small>{customer.email}</small></Link> },
   { id: "company", header: "Company", cell: (customer) => customer.company || "—" },
   { id: "contact", header: "Contact", cell: (customer) => customer.phone || "—" },
   { id: "location", header: "Location", cell: (customer) => [customer.city, customer.country].filter(Boolean).join(", ") || "—" },
@@ -50,15 +50,43 @@ const customerFormSchema = z.object({
 
 type CustomerFormValues = z.infer<typeof customerFormSchema>;
 
-export function CustomerCreatePage() {
+function CustomerForm({ customer }: { customer?: Customer }) {
+  const token = useAccessToken();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string>();
-  const { register, handleSubmit, formState: { errors } } = useForm<CustomerFormValues>({ resolver: zodResolver(customerFormSchema), defaultValues: { name: "", company: "", email: "", phone: "", billing_address: "", city: "", state: "", country: "", postal_code: "", tax_id: "" } });
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CustomerFormValues>({ resolver: zodResolver(customerFormSchema), values: customer ? customerFormValues(customer) : undefined, defaultValues: customerFormValues() });
 
-  function onSubmit() {
-    setNotice("Customer form is ready. Saving will be connected in the API-integration pass.");
+  async function onSubmit(values: CustomerFormValues) {
+    setNotice(undefined);
+    try {
+      const saved = customer ? await api.patch<Customer>(`/customers/${customer.id}`, values, token) : await api.post<Customer>("/customers", values, token);
+      queryClient.setQueryData(["customer", String(saved.id)], saved);
+      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+      navigate(`/customers/${saved.id}`, { replace: true });
+    } catch (saveError) {
+      setNotice(saveError instanceof ApiError ? saveError.message : "We could not save this customer.");
+    }
   }
 
-  return <><PageHeader eyebrow="Customers" title="Add customer" description="Capture the contact and billing details used for subscriptions and invoices." action={<Link className="button button--secondary" to="/customers">Back to customers</Link>} /><form className="profile-card" onSubmit={handleSubmit(onSubmit)} noValidate><div className="profile-card__section"><h2>Contact details</h2><div className="form-grid"><TextField label="Customer name" autoComplete="name" error={errors.name?.message} {...register("name")} /><TextField label="Company" autoComplete="organization" {...register("company")} /><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Phone" type="tel" autoComplete="tel" {...register("phone")} /></div></div><div className="profile-card__section"><h2>Billing details</h2><div className="form-grid"><TextAreaField label="Billing address" rows={3} containerClassName="field--wide" {...register("billing_address")} /><TextField label="City" autoComplete="address-level2" {...register("city")} /><TextField label="State" autoComplete="address-level1" {...register("state")} /><TextField label="Country" autoComplete="country-name" {...register("country")} /><TextField label="Postal code" autoComplete="postal-code" {...register("postal_code")} /><TextField label="Tax ID" {...register("tax_id")} /></div></div>{notice ? <p className="form-alert form-alert--success" role="status">{notice}</p> : null}<div className="form-actions"><Button type="submit">Save customer</Button></div></form></>;
+  return <><PageHeader eyebrow="Customers" title={customer ? "Edit customer" : "Add customer"} description="Capture the contact and billing details used for subscriptions and invoices." action={<Link className="button button--secondary" to="/customers">Back to customers</Link>} /><form className="profile-card" onSubmit={handleSubmit(onSubmit)} noValidate><div className="profile-card__section"><h2>Contact details</h2><div className="form-grid"><TextField label="Customer name" autoComplete="name" error={errors.name?.message} {...register("name")} /><TextField label="Company" autoComplete="organization" {...register("company")} /><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Phone" type="tel" autoComplete="tel" {...register("phone")} /></div></div><div className="profile-card__section"><h2>Billing details</h2><div className="form-grid"><TextAreaField label="Billing address" rows={3} containerClassName="field--wide" {...register("billing_address")} /><TextField label="City" autoComplete="address-level2" {...register("city")} /><TextField label="State" autoComplete="address-level1" {...register("state")} /><TextField label="Country" autoComplete="country-name" {...register("country")} /><TextField label="Postal code" autoComplete="postal-code" {...register("postal_code")} /><TextField label="Tax ID" {...register("tax_id")} /></div></div>{notice ? <p className="form-alert" role="alert">{notice}</p> : null}<div className="form-actions"><Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Saving…" : "Save customer"}</Button></div></form></>;
+}
+
+function customerFormValues(customer?: Customer): CustomerFormValues {
+  return { name: customer?.name ?? "", company: customer?.company ?? "", email: customer?.email ?? "", phone: customer?.phone ?? "", billing_address: customer?.billing_address ?? "", city: customer?.city ?? "", state: customer?.state ?? "", country: customer?.country ?? "", postal_code: customer?.postal_code ?? "", tax_id: customer?.tax_id ?? "" };
+}
+
+export function CustomerCreatePage() {
+  return <CustomerForm />;
+}
+
+export function CustomerEditPage() {
+  const token = useAccessToken();
+  const { customerId } = useParams();
+  const query = useQuery({ queryKey: ["customer", customerId], enabled: Boolean(customerId), queryFn: () => api.get<Customer>(`/customers/${customerId}`, token) });
+  if (query.isLoading) return <LoadingState title="Loading customer" description="Retrieving the customer record." />;
+  if (query.isError || !query.data) return <ErrorState title="Could not load this customer" description={query.error instanceof ApiError ? query.error.message : "The customer is unavailable."} onRetry={() => void query.refetch()} />;
+  return <CustomerForm customer={query.data} />;
 }
 
 type ProfileValues = Pick<Customer, "name" | "company" | "email" | "phone" | "billing_address" | "city" | "state" | "country" | "postal_code" | "tax_id">;

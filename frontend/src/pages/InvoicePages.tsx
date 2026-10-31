@@ -34,6 +34,7 @@ function useAccessToken() {
 
 export function InvoicesPage() {
   const token = useAccessToken();
+  const { user } = useAuth();
   const [status, setStatus] = useState<InvoiceStatus | "ALL">("ALL");
   const query = status === "ALL" ? "/invoices?page_size=25" : `/invoices?page_size=25&status=${status}`;
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["invoices", status], queryFn: () => api.get<PaginatedResponse<Invoice>>(query, token) });
@@ -47,7 +48,8 @@ export function InvoicesPage() {
     { id: "amount", header: "Amount due", cell: (invoice) => <strong>{formatMoney(invoice.amount_due, invoice.currency)}</strong> },
   ];
 
-  return <><PageHeader eyebrow="Billing" title="Invoices" description="Review invoices, due dates, and payment status from the live billing ledger." action={<label className="filter-field">Status<select value={status} onChange={(event) => setStatus(event.target.value as InvoiceStatus | "ALL")}>{invoiceStatuses.map((option) => <option key={option} value={option}>{option === "ALL" ? "All statuses" : option.replaceAll("_", " ")}</option>)}</select></label>} />{isLoading ? <LoadingState title="Loading invoices" description="Retrieving the latest billing records." /> : null}{isError ? <ErrorState title="Could not load invoices" description={error instanceof ApiError ? error.message : "Please check your connection and try again."} onRetry={() => void refetch()} /> : null}{data ? <section className="data-card"><div className="data-card__summary"><strong>{data.count}</strong><span>invoice{data.count === 1 ? "" : "s"}</span></div>{data.results.length ? <DataTable label="Invoices" columns={invoiceColumns} rows={data.results} getRowKey={(invoice) => invoice.uuid} /> : <EmptyState title="No invoices found" description="There are no invoices matching this status yet." />}</section> : null}</>;
+  const canCreate = user?.role === "admin" || user?.role === "staff";
+  return <><PageHeader eyebrow="Billing" title="Invoices" description="Review invoices, due dates, and payment status from the live billing ledger." action={<div className="directory-actions"><label className="filter-field">Status<select value={status} onChange={(event) => setStatus(event.target.value as InvoiceStatus | "ALL")}>{invoiceStatuses.map((option) => <option key={option} value={option}>{option === "ALL" ? "All statuses" : option.replaceAll("_", " ")}</option>)}</select></label>{canCreate ? <Link className="button button--primary" to="/invoices/new">Create invoice</Link> : null}</div>} />{isLoading ? <LoadingState title="Loading invoices" description="Retrieving the latest billing records." /> : null}{isError ? <ErrorState title="Could not load invoices" description={error instanceof ApiError ? error.message : "Please check your connection and try again."} onRetry={() => void refetch()} /> : null}{data ? <section className="data-card"><div className="data-card__summary"><strong>{data.count}</strong><span>invoice{data.count === 1 ? "" : "s"}</span></div>{data.results.length ? <DataTable label="Invoices" columns={invoiceColumns} rows={data.results} getRowKey={(invoice) => invoice.uuid} /> : <EmptyState title="No invoices found" description="There are no invoices matching this status yet." />}</section> : null}</>;
 }
 
 export function InvoiceDetailPage() {
@@ -84,6 +86,20 @@ export function InvoiceDetailPage() {
     }
   }
 
+  async function openTaxInvoice() {
+    if (!invoice) return;
+    setFeedback(undefined);
+    try {
+      const document = await api.download(`/invoices/${invoice.uuid}/tax-invoice`, token);
+      const documentUrl = URL.createObjectURL(document);
+      const windowReference = window.open(documentUrl, "_blank", "noopener,noreferrer");
+      if (!windowReference) setFeedback("Your browser blocked the tax invoice window. Please allow pop-ups and try again.");
+      window.setTimeout(() => URL.revokeObjectURL(documentUrl), 60_000);
+    } catch (downloadError) {
+      setFeedback(downloadError instanceof ApiError ? downloadError.message : "The tax invoice could not be opened.");
+    }
+  }
+
   if (isLoading) return <LoadingState title="Loading invoice" description="Retrieving invoice details and line items." />;
   if (isError || !invoice) return <ErrorState title="Could not load this invoice" description={error instanceof ApiError ? error.message : "The invoice is unavailable."} onRetry={() => void refetch()} />;
 
@@ -91,5 +107,5 @@ export function InvoiceDetailPage() {
   const canConfirm = canManage && invoice.status === "DRAFT";
   const canCancel = canManage && (invoice.status === "DRAFT" || invoice.status === "CONFIRMED");
 
-  return <><PageHeader eyebrow="Billing" title={invoice.invoice_number} description={`Issued ${formatDate(invoice.issue_date)} · Due ${formatDate(invoice.due_date)}`} action={<div className="page-actions"><Button type="button" tone="secondary" onClick={() => navigate("/invoices")}>Back to invoices</Button><Button type="button" tone="secondary" onClick={() => void downloadPdf()}>Download PDF</Button>{canConfirm ? <Button type="button" disabled={updateInvoice.isPending} onClick={() => updateInvoice.mutate("confirm")}>Confirm invoice</Button> : null}{canCancel ? <Button type="button" tone="quiet" disabled={updateInvoice.isPending} onClick={() => updateInvoice.mutate("cancel")}>Cancel invoice</Button> : null}</div>} />{feedback ? <p className="form-alert" role="status">{feedback}</p> : null}<section className="invoice-overview"><div className="invoice-overview__status"><StatusBadge value={invoice.status} /><StatusBadge value={invoice.payment_status} />{invoice.is_overdue ? <StatusBadge value="OVERDUE" /> : null}</div><div><span>Amount due</span><strong>{formatMoney(invoice.amount_due, invoice.currency)}</strong></div><div><span>Total</span><strong>{formatMoney(invoice.total_amount, invoice.currency)}</strong></div><div><span>Payment terms</span><strong>{invoice.payment_terms}</strong></div></section><section className="invoice-section"><h2>Invoice lines</h2><DataTable label={`${invoice.invoice_number} line items`} columns={getInvoiceLineColumns(invoice.currency)} rows={invoice.lines} getRowKey={(line) => line.id} /></section><section className="invoice-totals"><div><span>Subtotal</span><strong>{formatMoney(invoice.subtotal_amount, invoice.currency)}</strong></div><div><span>Discount</span><strong>−{formatMoney(invoice.discount_amount, invoice.currency)}</strong></div><div><span>Tax</span><strong>{formatMoney(invoice.tax_amount, invoice.currency)}</strong></div><div className="invoice-totals__total"><span>Total</span><strong>{formatMoney(invoice.total_amount, invoice.currency)}</strong></div></section></>;
+  return <><PageHeader eyebrow="Billing" title={invoice.invoice_number} description={`Issued ${formatDate(invoice.issue_date)} · Due ${formatDate(invoice.due_date)}`} action={<div className="page-actions"><Button type="button" tone="secondary" onClick={() => navigate("/invoices")}>Back to invoices</Button><Button type="button" tone="secondary" onClick={() => void downloadPdf()}>Download PDF</Button><Button type="button" tone="secondary" onClick={() => void openTaxInvoice()}>View tax invoice</Button>{canConfirm ? <Button type="button" disabled={updateInvoice.isPending} onClick={() => updateInvoice.mutate("confirm")}>Confirm invoice</Button> : null}{canCancel ? <Button type="button" tone="quiet" disabled={updateInvoice.isPending} onClick={() => updateInvoice.mutate("cancel")}>Cancel invoice</Button> : null}</div>} />{feedback ? <p className="form-alert" role="status">{feedback}</p> : null}<section className="invoice-overview"><div className="invoice-overview__status"><StatusBadge value={invoice.status} /><StatusBadge value={invoice.payment_status} />{invoice.is_overdue ? <StatusBadge value="OVERDUE" /> : null}</div><div><span>Amount due</span><strong>{formatMoney(invoice.amount_due, invoice.currency)}</strong></div><div><span>Total</span><strong>{formatMoney(invoice.total_amount, invoice.currency)}</strong></div><div><span>Payment terms</span><strong>{invoice.payment_terms}</strong></div></section><section className="invoice-section"><h2>Invoice lines</h2><DataTable label={`${invoice.invoice_number} line items`} columns={getInvoiceLineColumns(invoice.currency)} rows={invoice.lines} getRowKey={(line) => line.id} /></section><section className="invoice-totals"><div><span>Subtotal</span><strong>{formatMoney(invoice.subtotal_amount, invoice.currency)}</strong></div><div><span>Discount</span><strong>−{formatMoney(invoice.discount_amount, invoice.currency)}</strong></div><div><span>Tax</span><strong>{formatMoney(invoice.tax_amount, invoice.currency)}</strong></div><div className="invoice-totals__total"><span>Total</span><strong>{formatMoney(invoice.total_amount, invoice.currency)}</strong></div></section></>;
 }
