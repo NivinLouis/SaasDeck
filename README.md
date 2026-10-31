@@ -25,6 +25,7 @@
 - Consistent JSON validation/error envelope, pagination, filtering, searching, ordering, Django admin, initial migrations, and regression tests for authentication and ownership boundaries.
 - Auditable recurring billing runs: a daily Celery job finds due active subscriptions, generates idempotent invoices, advances successful billing periods, and records per-subscription failures for review.
 - Admin billing-run APIs, confirmed-invoice email delivery with a PDF attachment, plus Docker Compose worker and scheduler services.
+- Password recovery, customer plan requests, multi-line manual invoices, notification preferences/reminders, reporting exports, and append-only subscription lifecycle audit records.
 
 ## Deliberately left for feature branches
 
@@ -149,3 +150,9 @@ Database modeling and migration instructions are available in
 
 Invoice PDF implementation uses the backend-owned snapshot contract documented in
 [`docs/invoice-pdf-handoff.md`](docs/invoice-pdf-handoff.md).
+
+## Production checklist
+
+Use `docker compose -f docker-compose.yml -f docker-compose.production.yml up --build -d` for the production container topology. It serves the built frontend through Nginx, proxies `/api/` and `/media/`, uses Gunicorn for Django, and restarts the web and worker services. Set a real `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, public allowed hosts/origins, `FRONTEND_URL`, SMTP credentials, and the GST issuer profile before going live.
+
+The API health probe is `/health/`. Container logs are written to stdout for collection by the deployment platform. Take a PostgreSQL dump with `sh scripts/backup-postgres.sh` (set `BACKUP_DIR` if required) and schedule it outside the application container.

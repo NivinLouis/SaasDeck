@@ -89,6 +89,14 @@ EMAIL_HOST_USER = env("DJANGO_EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("DJANGO_EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("DJANGO_EMAIL_USE_TLS", default=True)
 
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": env("DJANGO_LOG_LEVEL", default="INFO")},
+    "loggers": {"django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False}},
+}
+
 # The scheduler uses the project timezone and can be adjusted without changing code.
 CELERY_BEAT_SCHEDULE = {
     "daily-recurring-billing": {
@@ -104,6 +112,10 @@ CELERY_BEAT_SCHEDULE = {
             hour=env.int("SUBSCRIPTION_LIFECYCLE_HOUR", default=1),
             minute=env.int("SUBSCRIPTION_LIFECYCLE_MINUTE", default=15),
         ),
+    },
+    "daily-overdue-reminders": {
+        "task": "notifications.send_overdue_reminders",
+        "schedule": crontab(hour=env.int("OVERDUE_REMINDER_HOUR", default=9), minute=0),
     },
 }
 

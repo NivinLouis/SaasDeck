@@ -7,7 +7,14 @@ from django.db import transaction
 from django.utils.timezone import localdate, now
 from rest_framework.exceptions import ValidationError
 
-from .models import QuotationTemplate, Subscription, SubscriptionLine
+from .models import QuotationTemplate, Subscription, SubscriptionAuditEvent, SubscriptionLine
+
+
+def record_subscription_audit(*, subscription, action, from_status="", actor=None, reason=""):
+    SubscriptionAuditEvent.objects.create(
+        subscription=subscription, actor=actor, action=action,
+        from_status=from_status, to_status=subscription.status, reason=reason,
+    )
 
 
 def validate_discount_for_subscription(discount, plan):
@@ -56,7 +63,7 @@ def create_subscription(*, customer, plan, created_by, start_date=None, expiry_d
     next_period_start = add_billing_interval(start_date, plan)
     payment_terms = plan.payment_term.name if plan.payment_term else "Immediate Payment"
 
-    return Subscription.objects.create(
+    subscription = Subscription.objects.create(
         subscription_number=subscription_number(),
         customer=customer,
         plan=plan,
@@ -71,6 +78,8 @@ def create_subscription(*, customer, plan, created_by, start_date=None, expiry_d
         applied_discount=applied_discount,
         created_by=created_by,
     )
+    record_subscription_audit(subscription=subscription, action="created", actor=created_by)
+    return subscription
 
 
 def _set_active_billing_period(subscription, period_start):
@@ -170,7 +179,7 @@ def create_quotation_from_template(*, template, customer, created_by, start_date
 
 
 @transaction.atomic
-def transition_subscription(*, subscription_id, action, cancellation_reason="", customer_initiated=False):
+def transition_subscription(*, subscription_id, action, cancellation_reason="", customer_initiated=False, actor=None):
     subscription = Subscription.objects.select_related("plan", "template").select_for_update(of=("self",)).get(pk=subscription_id)
     current = subscription.status
 
@@ -229,6 +238,8 @@ def transition_subscription(*, subscription_id, action, cancellation_reason="", 
         raise ValidationError({"action": "Unsupported subscription action."})
 
     subscription.save()
+    if current != subscription.status:
+        record_subscription_audit(subscription=subscription, action=action, from_status=current, actor=actor, reason=cancellation_reason)
     return subscription
 
 
@@ -247,6 +258,7 @@ def run_subscription_lifecycle(*, as_of=None):
             subscription.status = Subscription.Status.ACTIVE
             _set_active_billing_period(subscription, subscription.current_period_end + timedelta(days=1))
             subscription.save(update_fields=["status", "current_period_start", "current_period_end", "next_billing_date", "updated_at"])
+            record_subscription_audit(subscription=subscription, action="trial_completed", from_status=Subscription.Status.TRIAL)
             summary["trials_activated"] += 1
 
     expiry_ids = Subscription.objects.filter(
@@ -260,13 +272,17 @@ def run_subscription_lifecycle(*, as_of=None):
                 continue
             subscription.next_billing_date = None
             if subscription.plan.auto_close_on_expiry:
+                previous_status = subscription.status
                 subscription.status = Subscription.Status.CLOSED
                 subscription.auto_renew = False
                 subscription.closed_at = now()
                 summary["closed"] += 1
                 subscription.save(update_fields=["status", "auto_renew", "closed_at", "next_billing_date", "updated_at"])
+                record_subscription_audit(subscription=subscription, action="expired_auto_close", from_status=previous_status)
             else:
+                previous_status = subscription.status
                 subscription.status = Subscription.Status.EXPIRED
                 summary["expired"] += 1
                 subscription.save(update_fields=["status", "next_billing_date", "updated_at"])
+                record_subscription_audit(subscription=subscription, action="expired", from_status=previous_status)
     return summary

@@ -7,15 +7,15 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsCustomer, IsStaffOrAdmin
 
 from .models import QuotationTemplate, Subscription
-from .serializers import CancelSubscriptionSerializer, QuotationFromTemplateSerializer, QuotationTemplateSerializer, SubscriptionSerializer
-from .services import run_subscription_lifecycle, transition_subscription
+from .serializers import CancelSubscriptionSerializer, CustomerPlanRequestSerializer, QuotationFromTemplateSerializer, QuotationTemplateSerializer, SubscriptionSerializer
+from .services import create_subscription, run_subscription_lifecycle, transition_subscription
 
 
 class SubscriptionQuerysetMixin:
     def get_queryset(self):
         queryset = Subscription.objects.select_related(
             "customer", "plan", "plan__product", "plan__payment_term", "template"
-        ).prefetch_related("lines__product", "lines__variant")
+        ).prefetch_related("lines__product", "lines__variant", "audit_events__actor")
         if self.request.user.role == "customer":
             return queryset.filter(customer__user=self.request.user)
         return queryset
@@ -92,6 +92,7 @@ class SubscriptionActionView(SubscriptionQuerysetMixin, APIView):
             subscription_id=subscription.id,
             action=self.action,
             cancellation_reason=cancellation_reason,
+            actor=request.user,
         )
         return Response(SubscriptionSerializer(updated).data, status=status.HTTP_200_OK)
 
@@ -110,8 +111,30 @@ class CustomerSubscriptionActionView(SubscriptionQuerysetMixin, APIView):
             action=self.action,
             cancellation_reason=cancellation_reason,
             customer_initiated=True,
+            actor=request.user,
         )
         return Response(SubscriptionSerializer(updated).data, status=status.HTTP_200_OK)
+
+
+class CustomerPlanRequestView(APIView):
+    """Create a draft subscription that staff can turn into a formal quotation."""
+
+    permission_classes = [IsCustomer]
+
+    def post(self, request):
+        serializer = CustomerPlanRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            customer = request.user.customer_profile
+        except AttributeError:
+            return Response({"detail": "Create a customer profile before requesting a plan."}, status=status.HTTP_400_BAD_REQUEST)
+        subscription = create_subscription(
+            customer=customer,
+            plan=serializer.validated_data["plan"],
+            created_by=request.user,
+            start_date=serializer.validated_data.get("start_date"),
+        )
+        return Response(SubscriptionSerializer(subscription).data, status=status.HTTP_201_CREATED)
 
 
 class SubscriptionLifecycleRunView(APIView):

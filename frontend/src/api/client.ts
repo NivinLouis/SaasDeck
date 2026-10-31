@@ -66,9 +66,13 @@ async function request<T>(path: string, options: ApiOptions = {}, retryAfterRefr
   return data as T;
 }
 
-async function download(path: string, token: string): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { Accept: "application/pdf", Authorization: `Bearer ${token}` } });
+async function download(path: string, token: string, retryAfterRefresh = true): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { Accept: "*/*", Authorization: `Bearer ${token}` } });
   if (!response.ok) {
+    if (response.status === 401 && retryAfterRefresh && token === activeSession?.access) {
+      const tokens = await refreshSession();
+      return download(path, tokens.access, false);
+    }
     const data = await response.json().catch(() => null) as Partial<ValidationErrorResponse> & { detail?: string } | null;
     throw new ApiError(data?.message ?? data?.detail ?? "The file could not be downloaded.", response.status, data?.fields);
   }

@@ -4,8 +4,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Notification
-from .serializers import NotificationSerializer
+from .models import Notification, NotificationPreference
+from .serializers import NotificationPreferenceSerializer, NotificationSerializer
 
 
 class NotificationListView(generics.ListAPIView):
@@ -22,3 +22,16 @@ class NotificationReadView(APIView):
             notification.read_at = now()
             notification.save(update_fields=("read_at", "updated_at"))
         return Response(NotificationSerializer(notification).data)
+
+
+class NotificationPreferenceView(APIView):
+    def get(self, request):
+        preference, _ = NotificationPreference.objects.get_or_create(user=request.user)
+        return Response(NotificationPreferenceSerializer(preference).data)
+
+    def patch(self, request):
+        preference, _ = NotificationPreference.objects.get_or_create(user=request.user)
+        serializer = NotificationPreferenceSerializer(preference, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

@@ -7,9 +7,9 @@ export function AppShell() {
   const navigate = useNavigate();
   const isCustomer = user?.role === "customer";
   const links = isCustomer
-      ? [{ to: "/portal/profile", label: "My profile" }, { to: "/portal/subscriptions", label: "My subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/settings/security", label: "Security" }]
-    : user?.role === "admin"
-      ? [{ to: "/app", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/team", label: "Team" }, { to: "/products", label: "Products" }, { to: "/plans", label: "Plans" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/reports", label: "Reports" }, { to: "/settings/security", label: "Security" }]
+      ? [{ to: "/portal/profile", label: "My profile" }, { to: "/portal/plans", label: "Choose a plan" }, { to: "/portal/subscriptions", label: "My subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/notifications", label: "Notifications" }, { to: "/settings/security", label: "Security" }]
+      : user?.role === "admin"
+      ? [{ to: "/app", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/team", label: "Team" }, { to: "/products", label: "Products" }, { to: "/attributes", label: "Variants" }, { to: "/plans", label: "Plans" }, { to: "/payment-terms", label: "Payment terms" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/billing-runs", label: "Billing runs" }, { to: "/reports", label: "Reports" }, { to: "/notifications", label: "Notifications" }, { to: "/settings/security", label: "Security" }]
       : [{ to: "/app", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/products", label: "Products" }, { to: "/plans", label: "Plans" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/settings/security", label: "Security" }];
 
   async function handleLogout() {

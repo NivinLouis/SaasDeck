@@ -9,7 +9,7 @@ from apps.accounts.models import User
 from apps.catalog.models import Product
 from apps.customers.models import Customer
 from apps.plans.models import Plan
-from apps.subscriptions.models import QuotationTemplate, QuotationTemplateLine, Subscription
+from apps.subscriptions.models import QuotationTemplate, QuotationTemplateLine, Subscription, SubscriptionAuditEvent
 from apps.subscriptions.services import run_subscription_lifecycle
 
 
@@ -83,6 +83,7 @@ class SubscriptionApiTests(APITestCase):
         self.assertEqual(cancel.data["status"], Subscription.Status.CANCELLED)
         self.assertEqual(cancel.data["cancellation_reason"], "No longer needed")
         self.assertEqual(invalid_pause.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(SubscriptionAuditEvent.objects.filter(subscription__uuid=created["uuid"]).count(), 7)
 
     def test_staff_creates_quotation_from_template_with_snapshot_lines(self):
         template = QuotationTemplate.objects.create(name="Cloud offer", plan=self.plan, validity_days=14)
@@ -121,6 +122,15 @@ class SubscriptionApiTests(APITestCase):
 
         self.assertEqual(create.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(activate.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_customer_can_request_an_available_plan(self):
+        self.client.force_authenticate(self.customer_user)
+        response = self.client.post(reverse("portal-plan-request"), {"plan": self.plan.id}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], Subscription.Status.DRAFT)
+        self.assertEqual(response.data["customer"], self.customer.id)
+        self.assertEqual(response.data["plan"], self.plan.id)
 
     def test_archived_plan_cannot_be_used(self):
         self.plan.is_active = False

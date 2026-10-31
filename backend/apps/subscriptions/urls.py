@@ -7,6 +7,7 @@ from .views import (
     CustomerAcceptQuotationView,
     CustomerCancelSubscriptionView,
     CustomerPauseSubscriptionView,
+    CustomerPlanRequestView,
     CustomerResumeSubscriptionView,
     CreateQuotationFromTemplateView,
     PauseSubscriptionView,
@@ -37,4 +38,5 @@ urlpatterns = [
     path("portal/subscriptions/<uuid:uuid>/pause", CustomerPauseSubscriptionView.as_view(), name="portal-subscription-pause"),
     path("portal/subscriptions/<uuid:uuid>/resume", CustomerResumeSubscriptionView.as_view(), name="portal-subscription-resume"),
     path("portal/subscriptions/<uuid:uuid>/cancel", CustomerCancelSubscriptionView.as_view(), name="portal-subscription-cancel"),
+    path("portal/plan-requests", CustomerPlanRequestView.as_view(), name="portal-plan-request"),
 ]
