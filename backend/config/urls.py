@@ -17,4 +17,12 @@ urlpatterns = [
     path("health/", HealthCheckView.as_view(), name="health"),
     path("api/v1/", include("apps.accounts.urls")),
     path("api/v1/", include("apps.customers.urls")),
+    path("api/v1/", include("apps.catalog.urls")),
+    path("api/v1/", include("apps.plans.urls")),
+    path("api/v1/", include("apps.subscriptions.urls")),
+    path("api/v1/", include("apps.discounts.urls")),
+    path("api/v1/", include("apps.billing.urls")),
+    path("api/v1/", include("apps.payments.urls")),
+    path("api/v1/", include("apps.reports.urls")),
+    path("api/v1/", include("apps.notifications.urls")),
 ]
