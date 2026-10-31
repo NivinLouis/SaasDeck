@@ -10,6 +10,13 @@ class TaxSummarySerializer(serializers.ModelSerializer):
         fields = ("id", "name", "rate", "is_inclusive")
 
 
+class TaxSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tax
+        fields = ("id", "name", "rate", "is_inclusive", "is_active", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
 class ProductSerializer(serializers.ModelSerializer):
     """Product representation used by both staff and customer-facing catalog pages."""
 
