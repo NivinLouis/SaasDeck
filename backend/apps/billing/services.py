@@ -8,6 +8,7 @@ import re
 
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.mail import EmailMessage
 from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -18,7 +19,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .models import Invoice, InvoiceLine
+from .models import BillingRun, Invoice, InvoiceLine
 
 MONEY_PLACES = PAISE = Decimal("0.01")
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$")
@@ -360,4 +361,116 @@ def generate_invoice_pdf(invoice_id: int) -> Invoice:
     document.build(story)
     invoice.pdf_document.save(f"{invoice.invoice_number}.pdf", ContentFile(buffer.getvalue()), save=False)
     invoice.save(update_fields=["pdf_document", "updated_at"])
+    return invoice
+
+
+def _recover_or_create_due_invoice(subscription, run_date):
+    """Return whether a new invoice was created for the subscription's current period."""
+    existing_invoice = Invoice.objects.filter(
+        subscription=subscription,
+        billing_period_start=subscription.current_period_start,
+        billing_period_end=subscription.current_period_end,
+    ).exclude(status=Invoice.Status.CANCELLED).first()
+    if existing_invoice:
+        return False
+
+    create_invoice(subscription=subscription, issue_date=run_date)
+    return True
+
+
+def _process_due_subscription(subscription_id, run_date):
+    """Invoice every missed period for one subscription in one locked transaction."""
+    from apps.subscriptions.models import Subscription
+    from apps.subscriptions.services import advance_subscription_billing_period
+
+    created = existing = 0
+    with transaction.atomic():
+        subscription = Subscription.objects.select_for_update().select_related("plan").get(pk=subscription_id)
+        while (
+            subscription.status == Subscription.Status.ACTIVE
+            and subscription.next_billing_date
+            and subscription.next_billing_date <= run_date
+        ):
+            if _recover_or_create_due_invoice(subscription, run_date):
+                created += 1
+            else:
+                existing += 1
+            subscription = advance_subscription_billing_period(subscription_id=subscription.id)
+    return created, existing
+
+
+def run_recurring_billing(*, run_date=None, triggered_by=None) -> BillingRun:
+    """Generate outstanding recurring invoices and persist a complete run audit.
+
+    Each subscription is processed in an isolated transaction so a malformed
+    subscription cannot prevent other customers from being invoiced. Re-running
+    a date is safe: existing invoices are retained and their subscriptions are
+    advanced without creating duplicates.
+    """
+    from apps.subscriptions.models import Subscription
+
+    run_date = run_date or timezone.localdate()
+    billing_run = BillingRun.objects.create(run_date=run_date, triggered_by=triggered_by)
+    candidate_ids = list(
+        Subscription.objects.filter(
+            status=Subscription.Status.ACTIVE,
+            next_billing_date__isnull=False,
+            next_billing_date__lte=run_date,
+        ).values_list("id", flat=True)
+    )
+    failures = []
+    invoices_created = invoices_existing = 0
+
+    for subscription_id in candidate_ids:
+        try:
+            created, existing = _process_due_subscription(subscription_id, run_date)
+            invoices_created += created
+            invoices_existing += existing
+        except Exception as exc:
+            failures.append({"subscription_id": subscription_id, "error": str(exc)})
+
+    if failures:
+        final_status = BillingRun.Status.PARTIAL if invoices_created or invoices_existing else BillingRun.Status.FAILED
+    else:
+        final_status = BillingRun.Status.COMPLETED
+
+    billing_run.subscriptions_considered = len(candidate_ids)
+    billing_run.invoices_created = invoices_created
+    billing_run.invoices_existing = invoices_existing
+    billing_run.failures = failures
+    billing_run.status = final_status
+    billing_run.finished_at = timezone.now()
+    billing_run.save(update_fields=[
+        "subscriptions_considered", "invoices_created", "invoices_existing", "failures", "status", "finished_at", "updated_at",
+    ])
+    return billing_run
+
+
+@transaction.atomic
+def send_invoice_email(invoice_id: int) -> Invoice:
+    """Email a final invoice with its generated PDF attached."""
+    invoice = Invoice.objects.select_for_update().select_related("customer").get(pk=invoice_id)
+    if invoice.status not in {Invoice.Status.CONFIRMED, Invoice.Status.PAID}:
+        raise ValidationError("Only confirmed or paid invoices can be sent.")
+    if not invoice.customer.email:
+        raise ValidationError({"invoice": "The invoice customer does not have an email address."})
+
+    if not invoice.pdf_document:
+        generate_invoice_pdf(invoice.id)
+        invoice.refresh_from_db()
+
+    message = EmailMessage(
+        subject=f"Invoice {invoice.invoice_number}",
+        body=(
+            f"Hello {invoice.customer.name},\n\n"
+            f"Your invoice {invoice.invoice_number} for {invoice.currency} {invoice.total_amount:.2f} is attached.\n"
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[invoice.customer.email],
+    )
+    with invoice.pdf_document.open("rb") as document:
+        message.attach(f"{invoice.invoice_number}.pdf", document.read(), "application/pdf")
+    message.send(fail_silently=False)
+    invoice.email_sent_at = timezone.now()
+    invoice.save(update_fields=["email_sent_at", "updated_at"])
     return invoice

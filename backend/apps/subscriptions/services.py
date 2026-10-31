@@ -61,6 +61,42 @@ def create_subscription(*, customer, plan, created_by, start_date=None, expiry_d
 
 
 @transaction.atomic
+def advance_subscription_billing_period(*, subscription_id):
+    """Move an invoiced active subscription to its next billable period.
+
+    The caller must have successfully created (or recovered) the invoice for the
+    current period before invoking this operation. Locking here keeps a manual
+    run and the scheduled task from advancing the same subscription twice.
+    """
+    subscription = Subscription.objects.select_for_update().select_related("plan").get(pk=subscription_id)
+    if subscription.status != Subscription.Status.ACTIVE:
+        raise ValidationError({"subscription": "Only active subscriptions can advance their billing period."})
+    if not subscription.current_period_end or not subscription.next_billing_date:
+        raise ValidationError({"subscription": "Subscription billing dates are required before advancing."})
+
+    next_period_start = subscription.current_period_end + timedelta(days=1)
+    if subscription.expiry_date and next_period_start > subscription.expiry_date:
+        update_fields = ["next_billing_date", "updated_at"]
+        subscription.next_billing_date = None
+        if subscription.plan.auto_close_on_expiry:
+            subscription.status = Subscription.Status.CLOSED
+            subscription.auto_renew = False
+            subscription.closed_at = now()
+            update_fields.extend(["status", "auto_renew", "closed_at"])
+        subscription.save(update_fields=update_fields)
+        return subscription
+
+    following_billing_date = add_billing_interval(next_period_start, subscription.plan)
+    subscription.current_period_start = next_period_start
+    subscription.current_period_end = following_billing_date - timedelta(days=1)
+    subscription.next_billing_date = following_billing_date
+    subscription.save(update_fields=[
+        "current_period_start", "current_period_end", "next_billing_date", "updated_at",
+    ])
+    return subscription
+
+
+@transaction.atomic
 def transition_subscription(*, subscription_id, action, cancellation_reason=""):
     subscription = Subscription.objects.select_for_update().select_related("plan").get(pk=subscription_id)
     current = subscription.status

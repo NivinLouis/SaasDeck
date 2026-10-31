@@ -36,6 +36,34 @@ services:
       redis:
         condition: service_started
 
+  celery-worker:
+    build: ./backend
+    working_dir: /app
+    command: celery -A config worker -l info
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  celery-beat:
+    build: ./backend
+    working_dir: /app
+    command: celery -A config beat -l info --schedule /tmp/celerybeat-schedule
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   frontend:
     build: ./frontend
     working_dir: /app
