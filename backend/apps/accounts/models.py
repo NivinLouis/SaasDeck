@@ -47,3 +47,15 @@ class User(AbstractUser):
     def save(self, *args, **kwargs):
         self.email = self.email.lower().strip()
         super().save(*args, **kwargs)
+
+    @property
+    def is_admin(self):
+        return self.role == self.Role.ADMIN or self.is_superuser
+
+    @property
+    def is_internal_staff(self):
+        return self.role in {self.Role.ADMIN, self.Role.STAFF} or self.is_staff
+
+    @property
+    def is_customer(self):
+        return self.role == self.Role.CUSTOMER
