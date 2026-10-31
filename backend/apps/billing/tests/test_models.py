@@ -12,7 +12,7 @@ from apps.billing.models import Invoice, InvoiceLine
 class BillingModelTests(TestCase):
     def setUp(self):
         self.customer = Customer.objects.create(name="Globex Corp", email="billing@globex.com")
-        self.plan = Plan.objects.create(name="Pro", code="pro-plan", base_price=Decimal("100.00"))
+        self.plan = Plan.objects.create(name="Pro", code="pro-plan", price=Decimal("100.00"))
         self.subscription = Subscription.objects.create(
             subscription_number="SUB-GLX-001",
             customer=self.customer,

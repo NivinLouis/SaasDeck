@@ -116,3 +116,6 @@ one app. See [`docs/backend-app-ownership.md`](docs/backend-app-ownership.md).
 
 Database modeling and migration instructions are available in
 [`docs/database-teammate-guide.md`](docs/database-teammate-guide.md).
+
+Invoice PDF implementation uses the backend-owned snapshot contract documented in
+[`docs/invoice-pdf-handoff.md`](docs/invoice-pdf-handoff.md).
