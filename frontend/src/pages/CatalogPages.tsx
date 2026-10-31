@@ -131,7 +131,7 @@ const planFormSchema = z.object({
 type PlanFormValues = z.infer<typeof planFormSchema>;
 
 function planValues(plan?: Plan): PlanFormValues {
-  return { product: plan ? String(plan.product) : "", name: plan?.name ?? "", code: plan?.code ?? "", description: plan?.description ?? "", billing_interval: plan?.billing_interval ?? "monthly", interval_count: String(plan?.interval_count ?? 1), price: plan?.price ?? "", currency: plan?.currency ?? "INR", minimum_quantity: String(plan?.minimum_quantity ?? 1), trial_period_days: String(plan?.trial_period_days ?? 0), available_from: plan?.available_from ?? "", available_until: plan?.available_until ?? "", allow_pause: plan?.allow_pause ?? true, allow_auto_renewal: plan?.allow_auto_renewal ?? true, is_active: plan?.is_active ?? true };
+  return { product: plan?.product ? String(plan.product) : "", name: plan?.name ?? "", code: plan?.code ?? "", description: plan?.description ?? "", billing_interval: plan?.billing_interval ?? "monthly", interval_count: String(plan?.interval_count ?? 1), price: plan?.price ?? "", currency: plan?.currency ?? "INR", minimum_quantity: String(plan?.minimum_quantity ?? 1), trial_period_days: String(plan?.trial_period_days ?? 0), available_from: plan?.available_from ?? "", available_until: plan?.available_until ?? "", allow_pause: plan?.allow_pause ?? true, allow_auto_renewal: plan?.allow_auto_renewal ?? true, is_active: plan?.is_active ?? true };
 }
 
 export function PlansPage() {
@@ -139,7 +139,7 @@ export function PlansPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["plans"], queryFn: () => api.get<PaginatedResponse<Plan>>("/plans?page_size=50", token) });
   const columns: TableColumn<Plan>[] = [
     { id: "name", header: "Plan", cell: (plan) => <Link className="table-link" to={`/plans/${plan.id}`}><strong>{plan.name}</strong><small>{plan.code}</small></Link> },
-    { id: "product", header: "Product", cell: (plan) => plan.product_detail.name },
+    { id: "product", header: "Product", cell: (plan) => plan.product_detail?.name ?? "—" },
     { id: "interval", header: "Billing", cell: (plan) => formatInterval(plan.billing_interval, plan.interval_count) },
     { id: "price", header: "Price", cell: (plan) => <strong>{formatMoney(plan.price, plan.currency)}</strong> },
     { id: "status", header: "Status", cell: (plan) => <StatusBadge value={plan.is_active ? "ACTIVE" : "INACTIVE"} /> },

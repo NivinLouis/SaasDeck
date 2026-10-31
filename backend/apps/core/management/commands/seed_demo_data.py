@@ -60,11 +60,11 @@ class Command(BaseCommand):
             # 3. Taxes
             taxes = self._seed_taxes()
 
-            # 4. Payment Terms & Plans
-            payment_terms, plans = self._seed_plans_and_terms()
-
-            # 5. Products, Attributes, and Variants (including +$560 Odoo variant)
+            # 4. Products, Attributes, and Variants (including +$560 Odoo variant)
             products, variants = self._seed_products_and_variants(taxes)
+
+            # 5. Payment Terms & Plans
+            payment_terms, plans = self._seed_plans_and_terms(products)
 
             # 6. Quotation Templates
             templates = self._seed_quotation_templates(plans, products, variants)
@@ -241,8 +241,8 @@ class Command(BaseCommand):
 
         return taxes
 
-    def _seed_plans_and_terms(self):
-        self.stdout.write("\n[4/7] Seeding Payment Terms & Plans...")
+    def _seed_plans_and_terms(self, products):
+        self.stdout.write("\n[5/7] Seeding Payment Terms & Plans...")
 
         # Payment terms
         terms_data = [
@@ -269,6 +269,8 @@ class Command(BaseCommand):
             {
                 "code": "starter-daily",
                 "name": "Starter Daily",
+                "product": products["erp"],
+                "currency": "INR",
                 "billing_interval": Plan.BillingInterval.DAILY,
                 "interval_count": 1,
                 "price": Decimal("49.00"),
@@ -280,6 +282,8 @@ class Command(BaseCommand):
             {
                 "code": "growth-weekly",
                 "name": "Growth Weekly",
+                "product": products["erp"],
+                "currency": "INR",
                 "billing_interval": Plan.BillingInterval.WEEKLY,
                 "interval_count": 1,
                 "price": Decimal("199.00"),
@@ -291,6 +295,8 @@ class Command(BaseCommand):
             {
                 "code": "pro-monthly",
                 "name": "Professional Monthly",
+                "product": products["erp"],
+                "currency": "INR",
                 "billing_interval": Plan.BillingInterval.MONTHLY,
                 "interval_count": 1,
                 "price": Decimal("799.00"),
@@ -302,6 +308,8 @@ class Command(BaseCommand):
             {
                 "code": "enterprise-yearly",
                 "name": "Enterprise Yearly",
+                "product": products["erp"],
+                "currency": "INR",
                 "billing_interval": Plan.BillingInterval.YEARLY,
                 "interval_count": 1,
                 "price": Decimal("7999.00"),
@@ -317,6 +325,8 @@ class Command(BaseCommand):
                 code=p["code"],
                 defaults={
                     "name": p["name"],
+                    "product": p["product"],
+                    "currency": p["currency"],
                     "billing_interval": p["billing_interval"],
                     "interval_count": p["interval_count"],
                     "price": p["price"],
