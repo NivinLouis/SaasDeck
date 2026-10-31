@@ -29,14 +29,14 @@ export function LoginPage() {
   const { register, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
   const registered = (location.state as { registered?: boolean } | null)?.registered;
 
-  if (isAuthenticated) return <Navigate to="/" replace />;
+  if (isAuthenticated) return <Navigate to="/app" replace />;
 
   async function onSubmit(values: LoginValues) {
     setServerError(undefined);
     try {
       const user = await login(values);
       const requestedPath = (location.state as { from?: string } | null)?.from;
-      navigate(requestedPath ?? (user.role === "customer" ? "/portal/profile" : "/"), { replace: true });
+      navigate(requestedPath ?? (user.role === "customer" ? "/portal/profile" : "/app"), { replace: true });
     } catch (error) {
       if (error instanceof ApiError && error.fields) {
         Object.entries(error.fields).forEach(([field, messages]) => {
