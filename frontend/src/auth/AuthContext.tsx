@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { TokenPair, User } from "../api/types";
 import { AuthContext, type AuthContextValue, type LoginPayload } from "./context";
@@ -7,6 +7,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.configureSession(
+      accessToken && refreshToken ? { access: accessToken, refresh: refreshToken } : null,
+      (tokens) => { setAccessToken(tokens.access); setRefreshToken(tokens.refresh); },
+    );
+    return () => api.configureSession(null);
+  }, [accessToken, refreshToken]);
 
   const login = useCallback(async ({ email, password }: LoginPayload) => {
     const tokens = await api.post<TokenPair>("/auth/login", { email, password });

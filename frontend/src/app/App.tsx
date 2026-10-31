@@ -5,7 +5,7 @@ import { useAuth } from "../auth/useAuth";
 import { AppShell } from "../layouts/AppShell";
 import { SecurityPage, TeamCreatePage, TeamPage } from "../pages/AdminPages";
 import { DiscountFormPage, DiscountsPage, TaxFormPage, TaxesPage } from "../pages/AdminCatalogPages";
-import { LoginPage, RegisterPage } from "../pages/AuthPages";
+import { ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from "../pages/AuthPages";
 import { InvoiceDetailPage, InvoicesPage } from "../pages/InvoicePages";
 import { InvoiceCreatePage } from "../pages/InvoiceCreatePage";
 import { ModuleFormPage, ModuleListPage, modules } from "../pages/ModulePages";
@@ -54,6 +54,8 @@ export function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route path="app" element={<RoleHome />} />

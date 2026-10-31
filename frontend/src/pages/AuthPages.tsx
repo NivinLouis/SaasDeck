@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/useAuth";
@@ -47,7 +47,7 @@ export function LoginPage() {
     }
   }
 
-  return <AuthFrame title="Welcome back" description="Sign in to continue to your workspace.">{registered ? <p className="form-alert form-alert--success" role="status">Your account is ready. Sign in to continue.</p> : null}<form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Password" type="password" autoComplete="current-password" error={errors.password?.message} {...register("password")} />{serverError ? <p className="form-alert" role="alert">{serverError}</p> : null}<Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Signing in…" : "Sign in"}</Button></form><p className="auth-switch">New to Brightloop? <Link to="/register">Create an account</Link></p></AuthFrame>;
+  return <AuthFrame title="Welcome back" description="Sign in to continue to your workspace.">{registered ? <p className="form-alert form-alert--success" role="status">Your account is ready. Sign in to continue.</p> : null}<form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Password" type="password" autoComplete="current-password" error={errors.password?.message} {...register("password")} />{serverError ? <p className="form-alert" role="alert">{serverError}</p> : null}<Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Signing in…" : "Sign in"}</Button></form><p className="auth-switch"><Link to="/forgot-password">Forgot your password?</Link></p><p className="auth-switch">New to Brightloop? <Link to="/register">Create an account</Link></p></AuthFrame>;
 }
 
 export function RegisterPage() {
@@ -71,4 +71,23 @@ export function RegisterPage() {
   }
 
   return <AuthFrame title="Create your account" description="Start managing your subscription account in one secure place."><form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate><TextField label="Full name" autoComplete="name" error={errors.full_name?.message} {...register("full_name")} /><TextField label="Email address" type="email" autoComplete="email" error={errors.email?.message} {...register("email")} /><TextField label="Password" type="password" autoComplete="new-password" hint="At least 9 characters, with uppercase, lowercase, and a special character." error={errors.password?.message} {...register("password")} />{serverError ? <p className="form-alert" role="alert">{serverError}</p> : null}<Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating account…" : "Create account"}</Button></form><p className="auth-switch">Already have an account? <Link to="/login">Sign in</Link></p></AuthFrame>;
+}
+
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [notice, setNotice] = useState<string>();
+  const [error, setError] = useState<string>();
+  async function submit(event: FormEvent) { event.preventDefault(); setError(undefined); try { const result = await api.post<{ message: string }>("/auth/password/reset/request", { email }); setNotice(result.message); } catch (requestError) { setError(requestError instanceof ApiError ? requestError.message : "We could not send the reset link."); } }
+  return <AuthFrame title="Reset your password" description="Enter your account email and we’ll send a secure reset link."><form className="form-stack" onSubmit={submit}><TextField label="Email address" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />{notice ? <p className="form-alert form-alert--success" role="status">{notice}</p> : null}{error ? <p className="form-alert" role="alert">{error}</p> : null}<Button type="submit">Send reset link</Button></form><p className="auth-switch"><Link to="/login">Back to sign in</Link></p></AuthFrame>;
+}
+
+export function ResetPasswordPage() {
+  const [params] = useSearchParams();
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [notice, setNotice] = useState<string>();
+  const [error, setError] = useState<string>();
+  const uid = params.get("uid") ?? ""; const token = params.get("token") ?? "";
+  async function submit(event: FormEvent) { event.preventDefault(); setError(undefined); if (password !== confirmPassword) { setError("Passwords do not match."); return; } try { const result = await api.post<{ message: string }>("/auth/password/reset/confirm", { uid, token, new_password: password }); setNotice(result.message); } catch (resetError) { setError(resetError instanceof ApiError ? resetError.message : "We could not reset the password."); } }
+  return <AuthFrame title="Choose a new password" description="Use at least 9 characters, including uppercase, lowercase, and a special character."><form className="form-stack" onSubmit={submit}><TextField label="New password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /><TextField label="Confirm new password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required />{notice ? <p className="form-alert form-alert--success" role="status">{notice} <Link to="/login">Sign in</Link></p> : null}{error ? <p className="form-alert" role="alert">{error}</p> : null}<Button type="submit" disabled={!uid || !token}>Reset password</Button></form></AuthFrame>;
 }

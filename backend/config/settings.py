@@ -75,6 +75,7 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True,
 }
 CORS_ALLOWED_ORIGINS = env.list("DJANGO_CORS_ALLOWED_ORIGINS", default=[])
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
 # Keep local development self-contained; set true in Docker/production with a Celery worker.
@@ -95,6 +96,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(
             hour=env.int("BILLING_RUN_HOUR", default=1),
             minute=env.int("BILLING_RUN_MINUTE", default=0),
+        ),
+    },
+    "daily-subscription-lifecycle": {
+        "task": "subscriptions.run_lifecycle",
+        "schedule": crontab(
+            hour=env.int("SUBSCRIPTION_LIFECYCLE_HOUR", default=1),
+            minute=env.int("SUBSCRIPTION_LIFECYCLE_MINUTE", default=15),
         ),
     },
 }

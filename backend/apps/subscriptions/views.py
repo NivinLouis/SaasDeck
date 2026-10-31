@@ -4,11 +4,11 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsStaffOrAdmin
+from apps.core.permissions import IsCustomer, IsStaffOrAdmin
 
 from .models import QuotationTemplate, Subscription
 from .serializers import CancelSubscriptionSerializer, QuotationFromTemplateSerializer, QuotationTemplateSerializer, SubscriptionSerializer
-from .services import transition_subscription
+from .services import run_subscription_lifecycle, transition_subscription
 
 
 class SubscriptionQuerysetMixin:
@@ -96,6 +96,31 @@ class SubscriptionActionView(SubscriptionQuerysetMixin, APIView):
         return Response(SubscriptionSerializer(updated).data, status=status.HTTP_200_OK)
 
 
+class CustomerSubscriptionActionView(SubscriptionQuerysetMixin, APIView):
+    """Customer self-service actions scoped to the authenticated customer's records."""
+
+    permission_classes = [IsCustomer]
+    action = ""
+
+    def post(self, request, uuid):
+        subscription = get_object_or_404(self.get_queryset(), uuid=uuid)
+        cancellation_reason = request.data.get("cancellation_reason", "") if self.action == "cancel" else ""
+        updated = transition_subscription(
+            subscription_id=subscription.id,
+            action=self.action,
+            cancellation_reason=cancellation_reason,
+            customer_initiated=True,
+        )
+        return Response(SubscriptionSerializer(updated).data, status=status.HTTP_200_OK)
+
+
+class SubscriptionLifecycleRunView(APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def post(self, request):
+        return Response(run_subscription_lifecycle())
+
+
 class ActivateSubscriptionView(SubscriptionActionView):
     action = "activate"
 
@@ -117,4 +142,20 @@ class ResumeSubscriptionView(SubscriptionActionView):
 
 
 class CancelSubscriptionView(SubscriptionActionView):
+    action = "cancel"
+
+
+class CustomerAcceptQuotationView(CustomerSubscriptionActionView):
+    action = "confirm"
+
+
+class CustomerPauseSubscriptionView(CustomerSubscriptionActionView):
+    action = "pause"
+
+
+class CustomerResumeSubscriptionView(CustomerSubscriptionActionView):
+    action = "resume"
+
+
+class CustomerCancelSubscriptionView(CustomerSubscriptionActionView):
     action = "cancel"
