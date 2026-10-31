@@ -1,4 +1,4 @@
-#SaasDeck
+# SaasDeck
 > **Odoo Hackathon Project**
 > A database-backed subscription management platform foundation. The backend is deliberately modular so the team can add catalog, subscriptions, billing, payments, reports, and portal features without reworking authentication or the data-access boundary.
 

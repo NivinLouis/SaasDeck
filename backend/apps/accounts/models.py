@@ -33,7 +33,7 @@ class User(AbstractUser):
         CUSTOMER = "customer", "Customer"
 
     username = None
-    email = models.EmailField("email address")
+    email = models.EmailField("email address", unique=True)
     full_name = models.CharField(max_length=255)
     role = models.CharField(max_length=16, choices=Role.choices, default=Role.CUSTOMER)
     created_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="created_users")
@@ -42,6 +42,8 @@ class User(AbstractUser):
     objects = UserManager()
 
     class Meta:
+        verbose_name = "user"
+        verbose_name_plural = "users"
         constraints = [models.UniqueConstraint(Lower("email"), name="accounts_user_email_ci_unique")]
 
     def save(self, *args, **kwargs):
