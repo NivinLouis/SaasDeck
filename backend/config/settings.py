@@ -53,6 +53,8 @@ TIME_ZONE = "Asia/Kolkata"
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -74,6 +76,8 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list("DJANGO_CORS_ALLOWED_ORIGINS", default=[])
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
+# Keep local development self-contained; set true in Docker/production with a Celery worker.
+INVOICE_PDF_ASYNC = env.bool("INVOICE_PDF_ASYNC", default=False)
 
 # Required to issue a GST tax invoice. Do not use placeholder values in production.
 GST_INVOICE_SUPPLIER = {
