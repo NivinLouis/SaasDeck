@@ -111,7 +111,7 @@ export type BillingInterval = "daily" | "weekly" | "monthly" | "yearly";
 export interface Plan {
   id: number;
   product: number;
-  product_detail: Pick<Product, "id" | "name" | "sku" | "product_type" | "sales_price">;
+  product_detail: Pick<Product, "id" | "name" | "sku" | "description" | "product_type" | "sales_price">;
   name: string;
   code: string;
   description: string | null;
@@ -130,6 +130,7 @@ export interface Plan {
   available_from: string | null;
   available_until: string | null;
   is_active: boolean;
+  is_public: boolean;
   created_at: string;
   updated_at: string;
 }

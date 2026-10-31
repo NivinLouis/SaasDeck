@@ -21,7 +21,7 @@ class PlanApiTests(APITestCase):
         )
         self.product = Product.objects.create(name="Cloud", sku="CLOUD", sales_price=Decimal("100.00"))
         self.active_plan = Plan.objects.create(
-            product=self.product, name="Cloud Monthly", code="cloud-monthly", price=Decimal("99.00")
+            product=self.product, name="Cloud Monthly", code="cloud-monthly", price=Decimal("99.00"), is_public=True,
         )
         self.archived_plan = Plan.objects.create(
             product=self.product, name="Legacy", code="legacy", price=Decimal("10.00"), is_active=False
@@ -36,6 +36,13 @@ class PlanApiTests(APITestCase):
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["code"], "cloud-monthly")
         self.assertEqual(archived_detail.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_public_showcase_only_lists_available_active_plans(self):
+        response = self.client.get(reverse("public-plan-showcase"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["code"], "cloud-monthly")
 
     def test_staff_can_create_a_product_linked_plan(self):
         self.client.force_authenticate(self.staff)
