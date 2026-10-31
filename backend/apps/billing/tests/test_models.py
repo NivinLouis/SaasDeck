@@ -4,15 +4,18 @@ from django.db import IntegrityError
 from django.test import TestCase
 
 from apps.customers.models import Customer
+from apps.catalog.models import Product
 from apps.plans.models import Plan
 from apps.subscriptions.models import Subscription
 from apps.billing.models import Invoice, InvoiceLine
+from apps.billing.services import generate_due_invoices
 
 
 class BillingModelTests(TestCase):
     def setUp(self):
         self.customer = Customer.objects.create(name="Globex Corp", email="billing@globex.com")
-        self.plan = Plan.objects.create(name="Pro", code="pro-plan", price=Decimal("100.00"))
+        self.product = Product.objects.create(name="Pro service", sku="PRO-SERVICE", sales_price=Decimal("100.00"))
+        self.plan = Plan.objects.create(name="Pro", code="pro-plan", product=self.product, price=Decimal("100.00"))
         self.subscription = Subscription.objects.create(
             subscription_number="SUB-GLX-001",
             customer=self.customer,
@@ -71,3 +74,35 @@ class BillingModelTests(TestCase):
                 due_date=date(2026, 4, 15),
                 total_amount=Decimal("100.00"),
             )
+
+    def test_due_billing_creates_one_invoice_and_advances_the_period(self):
+        self.subscription.current_period_start = date(2026, 1, 1)
+        self.subscription.current_period_end = date(2026, 1, 31)
+        self.subscription.next_billing_date = date(2026, 2, 1)
+        self.subscription.save(update_fields=["current_period_start", "current_period_end", "next_billing_date"])
+
+        first_run = generate_due_invoices(as_of=date(2026, 2, 1))
+        self.subscription.refresh_from_db()
+
+        self.assertEqual(first_run["created"], 1)
+        self.assertEqual(Invoice.objects.filter(subscription=self.subscription).count(), 1)
+        self.assertEqual(self.subscription.current_period_start, date(2026, 2, 1))
+        self.assertEqual(self.subscription.current_period_end, date(2026, 2, 28))
+        self.assertEqual(self.subscription.next_billing_date, date(2026, 3, 1))
+
+        repeated_run = generate_due_invoices(as_of=date(2026, 2, 1))
+        self.assertEqual(repeated_run["created"], 0)
+        self.assertEqual(Invoice.objects.filter(subscription=self.subscription).count(), 1)
+
+    def test_non_renewing_subscription_closes_after_its_final_billing_period(self):
+        self.subscription.auto_renew = False
+        self.subscription.current_period_start = date(2026, 1, 1)
+        self.subscription.current_period_end = date(2026, 1, 31)
+        self.subscription.next_billing_date = date(2026, 2, 1)
+        self.subscription.save(update_fields=["auto_renew", "current_period_start", "current_period_end", "next_billing_date"])
+
+        generate_due_invoices(as_of=date(2026, 2, 1))
+        self.subscription.refresh_from_db()
+
+        self.assertEqual(self.subscription.status, Subscription.Status.CLOSED)
+        self.assertEqual(Invoice.objects.filter(subscription=self.subscription).count(), 1)

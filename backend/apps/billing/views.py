@@ -8,9 +8,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.permissions import IsStaffOrAdmin
+
 from .models import Invoice
 from .serializers import InvoiceCreateSerializer, InvoiceSerializer
-from .services import InvoiceDocumentValidationError, cancel_invoice, confirm_invoice, render_tax_invoice_html
+from .services import InvoiceDocumentValidationError, cancel_invoice, confirm_invoice, generate_due_invoices, render_tax_invoice_html
 from .tasks import generate_invoice_pdf_task
 
 
@@ -107,3 +109,12 @@ class TaxInvoiceHTMLView(InvoiceActionView):
         response = HttpResponse(html, content_type="text/html; charset=utf-8")
         response["Content-Disposition"] = f'inline; filename="tax-invoice-{invoice.invoice_number}.html"'
         return response
+
+
+class BillingRunView(APIView):
+    """Allow staff to start an on-demand billing sweep when required."""
+
+    permission_classes = [IsStaffOrAdmin]
+
+    def post(self, request):
+        return Response(generate_due_invoices())

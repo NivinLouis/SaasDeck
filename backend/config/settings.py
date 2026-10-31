@@ -2,6 +2,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(DEBUG=(bool, False))
@@ -76,6 +77,12 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list("DJANGO_CORS_ALLOWED_ORIGINS", default=[])
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
+CELERY_BEAT_SCHEDULE = {
+    "generate-due-invoices-daily": {
+        "task": "billing.generate_due_invoices",
+        "schedule": crontab(hour=0, minute=5),
+    },
+}
 # Keep local development self-contained; set true in Docker/production with a Celery worker.
 INVOICE_PDF_ASYNC = env.bool("INVOICE_PDF_ASYNC", default=False)
 

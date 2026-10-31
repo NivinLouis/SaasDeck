@@ -68,9 +68,9 @@ def create_invoice(*, customer=None, subscription=None, issue_date=None, due_dat
     issue_date = issue_date or timezone.localdate()
     lines = lines or []
     if subscription:
-        subscription = Subscription.objects.select_for_update().select_related(
+        subscription = Subscription.objects.select_related(
             "customer", "plan", "plan__product", "plan__payment_term"
-        ).get(pk=subscription.pk)
+        ).select_for_update(of=("self",)).get(pk=subscription.pk)
         if subscription.status != Subscription.Status.ACTIVE:
             raise ValidationError({"subscription": "Only active subscriptions can be invoiced."})
         if not subscription.current_period_start or not subscription.current_period_end:
@@ -124,6 +124,102 @@ def create_invoice(*, customer=None, subscription=None, issue_date=None, due_dat
             InvoiceLine.objects.create(invoice=invoice, **_invoice_line_values(**line))
 
     return recalculate_invoice_totals(invoice.id)
+
+
+def _advance_subscription_period(subscription):
+    """Advance a successfully billed subscription to its next recurring period."""
+    from apps.subscriptions.services import add_billing_interval
+
+    next_period_start = subscription.current_period_end + timedelta(days=1)
+    next_period_end = add_billing_interval(next_period_start, subscription.plan) - timedelta(days=1)
+    subscription.current_period_start = next_period_start
+    subscription.current_period_end = next_period_end
+    subscription.next_billing_date = next_period_end + timedelta(days=1)
+
+
+def _close_after_current_period(subscription):
+    """Return whether the current period is the subscription's final billable period."""
+    if not subscription.expiry_date:
+        return not subscription.auto_renew
+    next_period_start = subscription.current_period_end + timedelta(days=1)
+    return next_period_start > subscription.expiry_date and (
+        subscription.plan.auto_close_on_expiry or not subscription.auto_renew
+    )
+
+
+@transaction.atomic
+def bill_due_subscription(*, subscription_id: int, as_of=None):
+    """Create one draft invoice for a due subscription and move its schedule forward.
+
+    The row lock, period unique constraint, and one-period-at-a-time advancement make
+    this operation safe to retry or run concurrently from multiple workers.
+    """
+    from apps.subscriptions.models import Subscription
+
+    as_of = as_of or timezone.localdate()
+    subscription = Subscription.objects.select_related(
+        "customer", "plan", "plan__product", "plan__payment_term"
+    ).select_for_update(of=("self",)).get(pk=subscription_id)
+    if subscription.status != Subscription.Status.ACTIVE:
+        return None
+    if not subscription.next_billing_date or subscription.next_billing_date > as_of:
+        return None
+    if not subscription.current_period_start or not subscription.current_period_end:
+        raise ValidationError({"subscription": "Subscription billing dates are required before recurring billing."})
+
+    # A stale active subscription which has no billable period remaining is closed
+    # without creating a future-period invoice.
+    if subscription.expiry_date and subscription.current_period_start > subscription.expiry_date:
+        subscription.status = Subscription.Status.CLOSED
+        subscription.auto_renew = False
+        subscription.closed_at = timezone.now()
+        subscription.save(update_fields=["status", "auto_renew", "closed_at", "updated_at"])
+        return None
+
+    existing_invoice = Invoice.objects.filter(
+        subscription=subscription,
+        billing_period_start=subscription.current_period_start,
+        billing_period_end=subscription.current_period_end,
+    ).exclude(status=Invoice.Status.CANCELLED).first()
+    invoice = existing_invoice or create_invoice(subscription=subscription, issue_date=as_of)
+    if _close_after_current_period(subscription):
+        subscription.status = Subscription.Status.CLOSED
+        subscription.auto_renew = False
+        subscription.closed_at = timezone.now()
+    else:
+        _advance_subscription_period(subscription)
+    subscription.save(update_fields=[
+        "status", "auto_renew", "closed_at", "current_period_start", "current_period_end",
+        "next_billing_date", "updated_at",
+    ])
+    return None if existing_invoice else invoice
+
+
+def generate_due_invoices(*, as_of=None, batch_size=500):
+    """Process due subscriptions in bounded batches and return an operational summary."""
+    from apps.subscriptions.models import Subscription
+
+    as_of = as_of or timezone.localdate()
+    due_ids = list(
+        Subscription.objects.filter(
+            status=Subscription.Status.ACTIVE,
+            next_billing_date__isnull=False,
+            next_billing_date__lte=as_of,
+        )
+        .order_by("next_billing_date", "id")
+        .values_list("id", flat=True)[:batch_size]
+    )
+    summary = {"as_of": as_of.isoformat(), "eligible": len(due_ids), "created": 0, "closed": 0, "failures": []}
+    for subscription_id in due_ids:
+        try:
+            invoice = bill_due_subscription(subscription_id=subscription_id, as_of=as_of)
+            if invoice:
+                summary["created"] += 1
+            elif Subscription.objects.only("status").get(pk=subscription_id).status == Subscription.Status.CLOSED:
+                summary["closed"] += 1
+        except Exception as exc:  # A malformed record must not block the remaining due subscriptions.
+            summary["failures"].append({"subscription_id": subscription_id, "message": str(exc)})
+    return summary
 
 
 def _normalise_gstin(value):

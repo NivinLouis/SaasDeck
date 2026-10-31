@@ -36,6 +36,34 @@ services:
       redis:
         condition: service_started
 
+  worker:
+    build: ./backend
+    working_dir: /app
+    command: celery -A config worker --loglevel=INFO
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  beat:
+    build: ./backend
+    working_dir: /app
+    command: celery -A config beat --loglevel=INFO
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   frontend:
     build: ./frontend
     working_dir: /app
