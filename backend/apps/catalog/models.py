@@ -1,18 +1,16 @@
 from decimal import Decimal
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
-from django.db.models import Q, CheckConstraint
+from django.db.models import Q, CheckConstraint, UniqueConstraint
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.models import TimeStampedModel, PublicUUIDModel
 
-
-class TaxRule(PublicUUIDModel, TimeStampedModel):
+class Tax(models.Model):
     """
-    Tax rule applied to products, subscription lines, and invoices.
+    Tax rate definition (e.g., GST 18%, VAT 20%).
     """
-    name = models.CharField(max_length=100, unique=True, help_text=_("e.g. GST 18%, VAT 20%"))
-    rate_percent = models.DecimalField(
+    name = models.CharField(max_length=128, unique=True, help_text=_("e.g. GST 18%, VAT 20%"))
+    rate = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("100.00"))],
@@ -23,38 +21,51 @@ class TaxRule(PublicUUIDModel, TimeStampedModel):
         help_text=_("Whether the sales price already includes this tax.")
     )
     is_active = models.BooleanField(default=True, db_index=True)
-    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = _("tax rule")
-        verbose_name_plural = _("tax rules")
+        verbose_name = _("tax")
+        verbose_name_plural = _("taxes")
+        ordering = ["name"]
         constraints = [
             CheckConstraint(
-                check=Q(rate_percent__gte=Decimal("0.00")) & Q(rate_percent__lte=Decimal("100.00")),
-                name="chk_tax_rate_percent_range"
+                check=Q(rate__gte=Decimal("0.00")) & Q(rate__lte=Decimal("100.00")),
+                name="chk_tax_rate_range"
             )
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.rate_percent}%)"
+        return f"{self.name} ({self.rate}%)"
+
+    @property
+    def rate_percent(self):
+        """Compatibility property for rate percentage."""
+        return self.rate
 
 
-class Product(PublicUUIDModel, TimeStampedModel):
+# Alias for backwards-compatibility
+TaxRule = Tax
+
+
+class Product(models.Model):
     """
-    Product or service available in the SaaS platform catalog.
+    Product or service available in the platform catalog.
     """
     class ProductType(models.TextChoices):
-        SERVICE = "SERVICE", _("Service")
-        CONSUMABLE = "CONSUMABLE", _("Consumable")
-        SUBSCRIPTION_ADDON = "ADDON", _("Subscription Add-on")
-        STORAGE = "STORAGE", _("Storage / Quota")
+        SERVICE = "service", _("Service")
+        CONSUMABLE = "consumable", _("Consumable")
+        SUBSCRIPTION_ADDON = "addon", _("Subscription Add-on")
+        STORAGE = "storage", _("Storage / Quota")
 
     name = models.CharField(max_length=255, db_index=True)
     sku = models.CharField(max_length=100, unique=True, db_index=True)
+    description = models.TextField(blank=True, null=True)
     product_type = models.CharField(
-        max_length=20,
+        max_length=32,
         choices=ProductType.choices,
-        default=ProductType.SERVICE
+        default=ProductType.SERVICE,
+        db_index=True
     )
     sales_price = models.DecimalField(
         max_digits=12,
@@ -69,73 +80,132 @@ class Product(PublicUUIDModel, TimeStampedModel):
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text=_("Internal unit cost price.")
     )
-    tax_rule = models.ForeignKey(
-        TaxRule,
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name="products",
-        help_text=_("Default tax rate applicable to this product.")
-    )
-    notes = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = _("product")
         verbose_name_plural = _("products")
+        ordering = ["name"]
         constraints = [
             CheckConstraint(
                 check=Q(sales_price__gte=Decimal("0.00")),
-                name="chk_product_sales_price_positive"
+                name="chk_product_sales_price_gte_0"
             ),
             CheckConstraint(
                 check=Q(cost_price__gte=Decimal("0.00")),
-                name="chk_product_cost_price_positive"
+                name="chk_product_cost_price_gte_0"
             ),
         ]
         indexes = [
             models.Index(fields=["name", "is_active"], name="idx_product_name_active"),
             models.Index(fields=["product_type", "is_active"], name="idx_product_type_active"),
+            models.Index(fields=["created_at"], name="idx_product_created_at"),
         ]
 
     def __str__(self):
         return f"{self.name} [{self.sku}]"
 
 
-class ProductVariant(PublicUUIDModel, TimeStampedModel):
+class ProductTax(models.Model):
     """
-    Product variant representing attributes (e.g. Tier: Pro/Enterprise, Region: US/EU/IN).
-    Allows price adjustments on top of the base product price.
+    Associates products with applicable taxes.
     """
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
-        related_name="variants"
+        related_name="product_taxes"
     )
-    attribute_name = models.CharField(max_length=100, help_text=_("Attribute name, e.g. Tier, Region, Storage"))
-    variant_value = models.CharField(max_length=100, help_text=_("Value, e.g. Enterprise, US-East, 100GB"))
-    sku_extension = models.CharField(max_length=50, blank=True, null=True)
-    price_adjustment = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=Decimal("0.00"),
-        help_text=_("Delta adjustment applied to product sales_price (can be negative or positive).")
+    tax = models.ForeignKey(
+        Tax,
+        on_delete=models.PROTECT,
+        related_name="product_taxes"
     )
-    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = _("product variant")
-        verbose_name_plural = _("product variants")
+        verbose_name = _("product tax")
+        verbose_name_plural = _("product taxes")
         constraints = [
-            models.UniqueConstraint(
-                fields=["product", "attribute_name", "variant_value"],
-                name="unique_product_attribute_variant"
+            UniqueConstraint(
+                fields=["product", "tax"],
+                name="unique_product_tax"
             )
         ]
 
     def __str__(self):
-        return f"{self.product.name} - {self.attribute_name}: {self.variant_value} ({'+' if self.price_adjustment >= 0 else ''}{self.price_adjustment})"
+        return f"{self.product.name} -> {self.tax.name}"
+
+
+class ProductAttribute(models.Model):
+    """
+    Product attribute dimension (e.g. Color, Brand, Storage, Region, Tier).
+    """
+    name = models.CharField(max_length=128, unique=True, help_text=_("Attribute name, e.g. Tier, Storage, Region"))
+    description = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("product attribute")
+        verbose_name_plural = _("product attributes")
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class ProductAttributeValue(models.Model):
+    """
+    Specific value of an attribute associated with a product, with optional price delta.
+    """
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="attribute_values"
+    )
+    attribute = models.ForeignKey(
+        ProductAttribute,
+        on_delete=models.PROTECT,
+        related_name="attribute_values"
+    )
+    value = models.CharField(max_length=128, help_text=_("Attribute value, e.g. 100GB, Enterprise, US-East"))
+    price_extra = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Price adjustment delta applied to product sales_price.")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("product attribute value")
+        verbose_name_plural = _("product attribute values")
+        constraints = [
+            UniqueConstraint(
+                fields=["product", "attribute", "value"],
+                name="unique_product_attribute_val"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["product", "attribute"], name="idx_prod_attr_val"),
+        ]
+
+    def __str__(self):
+        extra_str = f" (+{self.price_extra})" if self.price_extra > Decimal("0.00") else ""
+        return f"{self.product.name} - {self.attribute.name}: {self.value}{extra_str}"
 
     @property
     def final_price(self):
-        return max(Decimal("0.00"), self.product.sales_price + self.price_adjustment)
+        return max(Decimal("0.00"), self.product.sales_price + self.price_extra)
+
+    @property
+    def price_adjustment(self):
+        """Compatibility property for variant price adjustment."""
+        return self.price_extra
+
+
+# Alias for backwards-compatibility
+ProductVariant = ProductAttributeValue
