@@ -3,8 +3,8 @@ from rest_framework import generics
 
 from apps.core.permissions import IsStaffOrAdmin
 
-from .models import Product, Tax
-from .serializers import ProductSerializer, TaxSerializer
+from .models import Product, ProductAttribute, ProductAttributeValue, Tax
+from .serializers import ProductAttributeSerializer, ProductSerializer, ProductVariantSerializer, TaxSerializer
 
 
 class TaxListCreateView(generics.ListCreateAPIView):
@@ -31,6 +31,31 @@ class TaxDetailView(generics.RetrieveUpdateAPIView):
 
     def get_permissions(self):
         return [IsStaffOrAdmin()] if self.request.method in {"PUT", "PATCH"} else super().get_permissions()
+
+
+class AttributeListCreateView(generics.ListCreateAPIView):
+    serializer_class = ProductAttributeSerializer
+    permission_classes = [IsStaffOrAdmin]
+    queryset = ProductAttribute.objects.all()
+
+
+class AttributeDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = ProductAttributeSerializer
+    permission_classes = [IsStaffOrAdmin]
+    queryset = ProductAttribute.objects.all()
+
+
+class VariantListCreateView(generics.ListCreateAPIView):
+    serializer_class = ProductVariantSerializer
+    permission_classes = [IsStaffOrAdmin]
+    filterset_fields = ("product", "attribute")
+    queryset = ProductAttributeValue.objects.select_related("product", "attribute")
+
+
+class VariantDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = ProductVariantSerializer
+    permission_classes = [IsStaffOrAdmin]
+    queryset = ProductAttributeValue.objects.select_related("product", "attribute")
 
 
 class ProductListCreateView(generics.ListCreateAPIView):

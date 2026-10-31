@@ -18,6 +18,13 @@ class PaymentTermSummarySerializer(serializers.ModelSerializer):
         fields = ("id", "name", "days")
 
 
+class PaymentTermSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentTerm
+        fields = ("id", "name", "days", "description", "is_active", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
 class PlanSerializer(serializers.ModelSerializer):
     product_detail = ProductSummarySerializer(source="product", read_only=True)
     payment_term_detail = PaymentTermSummarySerializer(source="payment_term", read_only=True)

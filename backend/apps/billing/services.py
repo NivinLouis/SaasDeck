@@ -61,6 +61,15 @@ def _invoice_line_values(*, product, description, quantity, unit_price, discount
     }
 
 
+def subscription_discount_amount(subscription, subtotal):
+    discount = subscription.applied_discount
+    if not discount or not discount.is_currently_valid or subtotal < discount.minimum_purchase_amount:
+        return Decimal("0.00")
+    if discount.discount_type == "PERCENTAGE":
+        return money(subtotal * discount.value / Decimal("100"))
+    return min(money(discount.value), subtotal)
+
+
 @transaction.atomic
 def create_invoice(*, customer=None, subscription=None, issue_date=None, due_date=None, notes="", lines=None):
     """Create a draft invoice manually or from the current billing period of an active subscription."""
@@ -106,7 +115,7 @@ def create_invoice(*, customer=None, subscription=None, issue_date=None, due_dat
             tax_link = product.product_taxes.select_related("tax").filter(tax__is_active=True).first()
             InvoiceLine.objects.create(invoice=invoice, **_invoice_line_values(
                 product=product, description=subscription.plan.name, quantity=subscription.plan.minimum_quantity,
-                unit_price=subscription.plan.price, tax_rule=tax_link.tax if tax_link else None,
+                unit_price=subscription.plan.price, discount_amount=subscription_discount_amount(subscription, money(subscription.plan.price * subscription.plan.minimum_quantity)), tax_rule=tax_link.tax if tax_link else None,
                 tax_rate_percent=tax_link.tax.rate if tax_link else Decimal("0.00"),
                 unit="MONTH" if subscription.plan.billing_interval == "monthly" else subscription.plan.billing_interval.upper(),
             ))

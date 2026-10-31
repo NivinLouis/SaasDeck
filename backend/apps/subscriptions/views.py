@@ -6,8 +6,8 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsStaffOrAdmin
 
-from .models import Subscription
-from .serializers import CancelSubscriptionSerializer, SubscriptionSerializer
+from .models import QuotationTemplate, Subscription
+from .serializers import CancelSubscriptionSerializer, QuotationTemplateSerializer, SubscriptionSerializer
 from .services import transition_subscription
 
 
@@ -30,6 +30,19 @@ class SubscriptionListCreateView(SubscriptionQuerysetMixin, generics.ListCreateA
         if self.request.method == "POST":
             return [IsStaffOrAdmin()]
         return super().get_permissions()
+
+
+class QuotationTemplateListCreateView(generics.ListCreateAPIView):
+    serializer_class = QuotationTemplateSerializer
+    permission_classes = [IsStaffOrAdmin]
+    queryset = QuotationTemplate.objects.select_related("plan")
+
+
+class QuotationTemplateDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = QuotationTemplateSerializer
+    permission_classes = [IsStaffOrAdmin]
+    lookup_field = "uuid"
+    queryset = QuotationTemplate.objects.select_related("plan")
 
 
 class SubscriptionDetailView(SubscriptionQuerysetMixin, generics.RetrieveUpdateAPIView):

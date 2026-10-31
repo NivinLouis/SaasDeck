@@ -3,8 +3,9 @@ from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.plans.models import Plan
+from apps.discounts.models import DiscountRule
 
-from .models import Subscription
+from .models import QuotationTemplate, Subscription
 from .services import create_subscription, validate_plan_for_subscription
 
 
@@ -28,6 +29,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         model = Subscription
         fields = (
             "uuid", "subscription_number", "customer", "customer_detail", "plan", "plan_detail",
+            "applied_discount",
             "status", "start_date", "expiry_date", "current_period_start", "current_period_end",
             "next_billing_date", "payment_terms", "auto_renew", "cancellation_reason", "closed_at",
             "created_at", "updated_at",
@@ -60,3 +62,10 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
 class CancelSubscriptionSerializer(serializers.Serializer):
     cancellation_reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class QuotationTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuotationTemplate
+        fields = ("uuid", "name", "plan", "validity_days", "terms_and_conditions", "is_active", "created_at", "updated_at")
+        read_only_fields = ("uuid", "created_at", "updated_at")

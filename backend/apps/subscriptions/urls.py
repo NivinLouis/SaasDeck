@@ -5,12 +5,16 @@ from .views import (
     CancelSubscriptionView,
     PauseSubscriptionView,
     ResumeSubscriptionView,
+    QuotationTemplateDetailView,
+    QuotationTemplateListCreateView,
     SubscriptionDetailView,
     SubscriptionListCreateView,
 )
 
 
 urlpatterns = [
+    path("quotation-templates", QuotationTemplateListCreateView.as_view(), name="quotation-template-list"),
+    path("quotation-templates/<uuid:uuid>", QuotationTemplateDetailView.as_view(), name="quotation-template-detail"),
     path("subscriptions", SubscriptionListCreateView.as_view(), name="subscription-list"),
     path("subscriptions/<uuid:uuid>", SubscriptionDetailView.as_view(), name="subscription-detail"),
     path("subscriptions/<uuid:uuid>/activate", ActivateSubscriptionView.as_view(), name="subscription-activate"),
