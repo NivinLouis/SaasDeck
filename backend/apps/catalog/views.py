@@ -3,8 +3,34 @@ from rest_framework import generics
 
 from apps.core.permissions import IsStaffOrAdmin
 
-from .models import Product
-from .serializers import ProductSerializer
+from .models import Product, Tax
+from .serializers import ProductSerializer, TaxSerializer
+
+
+class TaxListCreateView(generics.ListCreateAPIView):
+    serializer_class = TaxSerializer
+    filterset_fields = ("is_active", "is_inclusive")
+    search_fields = ("name",)
+    ordering_fields = ("name", "rate", "created_at")
+    ordering = ("name",)
+
+    def get_queryset(self):
+        queryset = Tax.objects.all()
+        return queryset.filter(is_active=True) if self.request.user.role == "customer" else queryset
+
+    def get_permissions(self):
+        return [IsStaffOrAdmin()] if self.request.method == "POST" else super().get_permissions()
+
+
+class TaxDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = TaxSerializer
+
+    def get_queryset(self):
+        queryset = Tax.objects.all()
+        return queryset.filter(is_active=True) if self.request.user.role == "customer" else queryset
+
+    def get_permissions(self):
+        return [IsStaffOrAdmin()] if self.request.method in {"PUT", "PATCH"} else super().get_permissions()
 
 
 class ProductListCreateView(generics.ListCreateAPIView):
