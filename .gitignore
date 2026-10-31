@@ -1,0 +1,7 @@
+.env
+node_modules/
+frontend/dist/
+backend/__pycache__/
+backend/**/*.pyc
+postgres_data/
+.vscode/
