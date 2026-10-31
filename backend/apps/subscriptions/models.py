@@ -6,7 +6,7 @@ from django.db.models import Q, CheckConstraint
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TimeStampedModel, PublicUUIDModel
-from apps.customers.models import CustomerProfile
+from apps.customers.models import Customer
 from apps.plans.models import Plan
 from apps.catalog.models import Product, ProductVariant, TaxRule
 from apps.discounts.models import DiscountRule
@@ -77,7 +77,7 @@ class Subscription(PublicUUIDModel, TimeStampedModel):
         help_text=_("Unique human-readable reference, e.g. SUB-2026-0001")
     )
     customer = models.ForeignKey(
-        CustomerProfile,
+        Customer,
         on_delete=models.PROTECT,
         related_name="subscriptions",
         help_text=_("Customer who owns this subscription.")

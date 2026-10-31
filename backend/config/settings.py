@@ -17,6 +17,8 @@ INSTALLED_APPS = [
     "corsheaders", "rest_framework", "rest_framework_simplejwt.token_blacklist",
     "django_filters", "django_celery_beat",
     "apps.core", "apps.accounts", "apps.customers",
+    "apps.catalog", "apps.plans", "apps.discounts",
+    "apps.subscriptions", "apps.billing", "apps.payments",
 ]
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware", "django.middleware.security.SecurityMiddleware",

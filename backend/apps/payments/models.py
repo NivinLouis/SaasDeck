@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TimeStampedModel, PublicUUIDModel
-from apps.customers.models import CustomerProfile
+from apps.customers.models import Customer
 from apps.billing.models import Invoice
 
 
@@ -43,7 +43,7 @@ class Payment(PublicUUIDModel, TimeStampedModel):
         help_text=_("Target invoice this payment is credited against.")
     )
     customer = models.ForeignKey(
-        CustomerProfile,
+        Customer,
         on_delete=models.PROTECT,
         related_name="payments"
     )

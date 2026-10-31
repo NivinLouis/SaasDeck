@@ -27,13 +27,15 @@
 
 ```mermaid
 erDiagram
-    USER ||--o| CUSTOMER_PROFILE : "has profile"
+    USER ||--o| CUSTOMER : "has profile"
+    USER ||--o{ USER : "created by"
+    USER ||--o{ CUSTOMER : "created by"
     USER ||--o{ SUBSCRIPTION : "created by"
     USER ||--o{ PAYMENT : "recorded by"
 
-    CUSTOMER_PROFILE ||--o{ SUBSCRIPTION : "owns"
-    CUSTOMER_PROFILE ||--o{ INVOICE : "billed to"
-    CUSTOMER_PROFILE ||--o{ PAYMENT : "makes"
+    CUSTOMER ||--o{ SUBSCRIPTION : "owns"
+    CUSTOMER ||--o{ INVOICE : "billed to"
+    CUSTOMER ||--o{ PAYMENT : "makes"
 
     PLAN ||--o{ SUBSCRIPTION : "governs"
     PLAN ||--o{ QUOTATION_TEMPLATE : "presets"
@@ -61,27 +63,31 @@ erDiagram
 
     USER {
         bigint id PK
-        uuid uuid UK
         string email UK
-        string role "ADMIN | STAFF | CUSTOMER"
+        string full_name
+        string role "admin | staff | customer"
+        bigint created_by_id FK
         boolean is_active
-        boolean is_verified
-        timestamp created_at
+        boolean is_staff
+        timestamp date_joined
     }
 
-    CUSTOMER_PROFILE {
+    CUSTOMER {
         bigint id PK
-        uuid uuid UK
         bigint user_id FK
-        string company_name
-        string contact_name
-        string tax_identifier
-        string billing_address_line1
+        string name
+        string company
+        string email
+        string phone
+        string billing_address
         string city
-        string postal_code
+        string state
         string country
-        string currency
-        boolean is_active
+        string postal_code
+        string tax_id
+        bigint created_by_id FK
+        timestamp created_at
+        timestamp updated_at
     }
 
     PRODUCT {
@@ -220,20 +226,23 @@ erDiagram
 
 ### 3.1. `accounts` App (`backend/apps/accounts/models.py`)
 - **`User`**:
-  - `email`: `EmailField(unique=True, db_index=True)`
-  - `role`: `CharField(choices=['ADMIN', 'STAFF', 'CUSTOMER'], default='CUSTOMER', db_index=True)`
-  - `phone_number`: `CharField(max_length=30, blank=True, null=True)`
-  - `is_verified`: `BooleanField(default=False)`
-  - **Index**: `['email', 'role']`
+  - `email`: `EmailField(unique with Lower(email))`
+  - `full_name`: `CharField(max_length=255)`
+  - `role`: `CharField(choices=['admin', 'staff', 'customer'], default='customer')`
+  - `created_by`: Self-referential `ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)`
+  - **Constraint**: `UniqueConstraint(Lower('email'), name='accounts_user_email_ci_unique')`
 
 ### 3.2. `customers` App (`backend/apps/customers/models.py`)
-- **`CustomerProfile`**:
-  - `user`: `OneToOneField(User, on_delete=models.CASCADE, related_name='customer_profile')`
-  - `company_name`: `CharField(max_length=255, db_index=True)`
-  - `contact_name`: `CharField(max_length=255)`
-  - `tax_identifier`: `CharField(max_length=50, blank=True, null=True)` (e.g. GSTIN / VAT)
-  - `billing_address_line1`, `city`, `state_province`, `postal_code`, `country`, `currency`
-  - **Indexes**: `['company_name']`, `['is_active', 'country']`
+- **`Customer`**:
+  - `user`: `OneToOneField(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='customer_profile')`
+  - `name`: `CharField(max_length=255)`
+  - `company`: `CharField(max_length=255, blank=True)`
+  - `email`: `EmailField()`
+  - `phone`: `CharField(max_length=32, blank=True)`
+  - `billing_address`: `TextField(blank=True)`
+  - `city`, `state`, `country`, `postal_code`, `tax_id`
+  - `created_by`: `ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)`
+  - **Index**: `Index(fields=['email'])`
 
 ### 3.3. `catalog` App (`backend/apps/catalog/models.py`)
 - **`TaxRule`**:
