@@ -7,10 +7,10 @@ export function AppShell() {
   const navigate = useNavigate();
   const isCustomer = user?.role === "customer";
   const links = isCustomer
-    ? [{ to: "/portal/profile", label: "My profile" }, { to: "/portal/subscriptions", label: "My subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/settings/security", label: "Security" }]
+      ? [{ to: "/portal/profile", label: "My profile" }, { to: "/portal/subscriptions", label: "My subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/settings/security", label: "Security" }]
     : user?.role === "admin"
-      ? [{ to: "/", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/team", label: "Team" }, { to: "/products", label: "Products" }, { to: "/plans", label: "Plans" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/reports", label: "Reports" }, { to: "/settings/security", label: "Security" }]
-      : [{ to: "/", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/settings/security", label: "Security" }];
+      ? [{ to: "/app", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/team", label: "Team" }, { to: "/products", label: "Products" }, { to: "/plans", label: "Plans" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/reports", label: "Reports" }, { to: "/settings/security", label: "Security" }]
+      : [{ to: "/app", label: "Overview" }, { to: "/customers", label: "Customers" }, { to: "/products", label: "Products" }, { to: "/plans", label: "Plans" }, { to: "/quotation-templates", label: "Quotations" }, { to: "/subscriptions", label: "Subscriptions" }, { to: "/invoices", label: "Invoices" }, { to: "/payments", label: "Payments" }, { to: "/settings/security", label: "Security" }];
 
   async function handleLogout() {
     await logout();
@@ -24,7 +24,7 @@ export function AppShell() {
         <div className="workspace-pill"><span className="workspace-pill__dot" /> Brightloop workspace</div>
         <nav className="primary-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {links.map((link) => <NavLink key={link.to} to={link.to} end={link.to === "/"}>{link.label}</NavLink>)}
+          {links.map((link) => <NavLink key={link.to} to={link.to} end={link.to === "/app"}>{link.label}</NavLink>)}
         </nav>
         <div className="sidebar__footer">
           <div className="identity"><span>{user?.full_name.slice(0, 1).toUpperCase()}</span><div><strong>{user?.full_name}</strong><small>{user?.role}</small></div></div>
@@ -33,8 +33,8 @@ export function AppShell() {
       </aside>
       <main className="main-content">
         <header className="topbar">
-          <div><p className="eyebrow">SaasDeck</p><span>{isCustomer ? "Customer portal" : "Operations workspace"}</span></div>
-          <NavLink className="topbar__profile" to={isCustomer ? "/portal/profile" : "/"} aria-label="Open account area">
+          <div><p className="eyebrow">Brightloop</p><span>{isCustomer ? "Customer portal" : "Operations workspace"}</span></div>
+          <NavLink className="topbar__profile" to={isCustomer ? "/portal/profile" : "/app"} aria-label="Open account area">
             <span>{user?.full_name.slice(0, 1).toUpperCase()}</span><strong>{user?.full_name}</strong>
           </NavLink>
         </header>

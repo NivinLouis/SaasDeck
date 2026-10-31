@@ -2,9 +2,9 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAt
 
 export function Brand() {
   return (
-    <div className="brand" aria-label="SaasDeck">
-      <span className="brand-mark" aria-hidden="true">S</span>
-      <span>SaasDeck</span>
+    <div className="brand" aria-label="Brightloop">
+      <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
+      <span>Brightloop</span>
     </div>
   );
 }

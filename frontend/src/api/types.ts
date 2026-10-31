@@ -83,3 +83,95 @@ export interface Invoice {
   created_at: string;
   updated_at: string;
 }
+
+export type ProductType = "service" | "consumable" | "addon" | "storage";
+
+export interface AppliedTax {
+  id: number;
+  name: string;
+  rate: string;
+  is_inclusive: boolean;
+}
+
+export interface Product {
+  id: number;
+  name: string;
+  sku: string;
+  description: string | null;
+  product_type: ProductType;
+  sales_price: string;
+  is_active: boolean;
+  applied_taxes: AppliedTax[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type BillingInterval = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface Plan {
+  id: number;
+  product: number;
+  product_detail: Pick<Product, "id" | "name" | "sku" | "product_type" | "sales_price">;
+  name: string;
+  code: string;
+  description: string | null;
+  billing_interval: BillingInterval;
+  interval_count: number;
+  price: string;
+  currency: string;
+  minimum_quantity: number;
+  payment_term: number | null;
+  payment_term_detail: { id: number; name: string; days: number } | null;
+  trial_period_days: number;
+  auto_close_on_expiry: boolean;
+  allow_early_closure: boolean;
+  allow_pause: boolean;
+  allow_auto_renewal: boolean;
+  available_from: string | null;
+  available_until: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SubscriptionStatus = "DRAFT" | "QUOTATION" | "CONFIRMED" | "TRIAL" | "ACTIVE" | "PAUSED" | "CANCELLED" | "EXPIRED" | "CLOSED";
+
+export interface Subscription {
+  uuid: string;
+  subscription_number: string;
+  customer: number;
+  customer_detail: Pick<Customer, "id" | "name" | "company" | "email">;
+  plan: number;
+  plan_detail: Pick<Plan, "id" | "name" | "code" | "price" | "currency" | "billing_interval" | "interval_count">;
+  status: SubscriptionStatus;
+  start_date: string | null;
+  expiry_date: string | null;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  next_billing_date: string | null;
+  payment_terms: string;
+  auto_renew: boolean;
+  cancellation_reason: string | null;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PaymentMethod = "CREDIT_CARD" | "BANK_TRANSFER" | "UPI" | "CASH" | "STRIPE" | "RAZORPAY" | "OTHER";
+export type RecordedPaymentStatus = "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED";
+
+export interface Payment {
+  uuid: string;
+  payment_number: string;
+  invoice: number;
+  invoice_detail: Pick<Invoice, "uuid" | "invoice_number" | "total_amount" | "amount_paid" | "amount_due" | "currency" | "payment_status">;
+  payment_method: PaymentMethod;
+  status: RecordedPaymentStatus;
+  amount: string;
+  currency: string;
+  transaction_reference: string | null;
+  payment_date: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
