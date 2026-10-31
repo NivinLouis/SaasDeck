@@ -1,0 +1,32 @@
+services:
+  backend:
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -"
+    restart: unless-stopped
+    volumes:
+      - media_data:/app/media
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  celery-worker:
+    restart: unless-stopped
+
+  celery-beat:
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    working_dir: /usr/share/nginx/html
+    volumes:
+      - media_data:/var/www/media:ro
+    environment: []
+    ports:
+      - "${HTTP_EXTERNAL_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  media_data:

@@ -66,8 +66,11 @@ class Subscription(PublicUUIDModel, TimeStampedModel):
         DRAFT = "DRAFT", _("Draft")
         QUOTATION = "QUOTATION", _("Quotation Sent")
         CONFIRMED = "CONFIRMED", _("Confirmed")
+        TRIAL = "TRIAL", _("Trial")
         ACTIVE = "ACTIVE", _("Active")
         PAUSED = "PAUSED", _("Paused")
+        CANCELLED = "CANCELLED", _("Cancelled")
+        EXPIRED = "EXPIRED", _("Expired")
         CLOSED = "CLOSED", _("Closed")
 
     subscription_number = models.CharField(
@@ -151,6 +154,21 @@ class Subscription(PublicUUIDModel, TimeStampedModel):
 
     def __str__(self):
         return f"{self.subscription_number} - {self.customer} [{self.get_status_display()}]"
+
+
+class SubscriptionAuditEvent(TimeStampedModel):
+    """Append-only lifecycle audit record for subscription status transitions."""
+
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="audit_events")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="subscription_audit_events")
+    action = models.CharField(max_length=64)
+    from_status = models.CharField(max_length=20, blank=True)
+    to_status = models.CharField(max_length=20)
+    reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [models.Index(fields=("subscription", "created_at"), name="sub_audit_timeline")]
 
 
 class SubscriptionLine(TimeStampedModel):

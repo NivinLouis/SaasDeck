@@ -32,7 +32,7 @@ class Customer(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        indexes = [models.Index(fields=["email"])]
+        indexes = [models.Index(fields=["email"], name="customers_c_email_2bd4fb_idx")]
         ordering = ["name", "id"]
 
     def __str__(self):
